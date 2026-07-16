@@ -9,63 +9,11 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
 
-    <script>
-    // Resilient library loader: each library tries up to 3 different CDN providers
-    // in order. If a network/firewall/extension blocks one (e.g. cdnjs), the others
-    // are tried automatically instead of the whole dashboard silently breaking.
-    (function(){
-        function loadScript(url){
-            return new Promise((resolve, reject) => {
-                const s = document.createElement('script');
-                s.src = url;
-                s.onload = () => resolve(url);
-                s.onerror = () => reject(new Error('failed to load: ' + url));
-                document.head.appendChild(s);
-            });
-        }
-        async function loadWithFallbacks(urls){
-            for (const url of urls) {
-                try { await loadScript(url); return true; }
-                catch (e) { console.warn(e.message); }
-            }
-            console.error('All CDN mirrors failed for:', urls);
-            return false;
-        }
-        const LIBS = {
-            chart: [
-                'https://cdnjs.cloudflare.com/ajax/libs/chart.js/4.4.0/chart.umd.min.js',
-                'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js',
-                'https://unpkg.com/chart.js@4.4.0/dist/chart.umd.min.js'
-            ],
-            html2canvas: [
-                'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
-                'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js',
-                'https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js'
-            ],
-            leaflet: [
-                'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js',
-                'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js',
-                'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
-            ],
-            jspdf: [
-                'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-                'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js',
-                'https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js'
-            ],
-            pptxgenjs: [
-                'https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/dist/pptxgen.bundle.js',
-                'https://unpkg.com/pptxgenjs@3.12.0/dist/pptxgen.bundle.js'
-            ]
-        };
-        window.LIB_STATUS = {};
-        window.librariesReady = (async () => {
-            await Promise.all(Object.keys(LIBS).map(async name => {
-                window.LIB_STATUS[name] = await loadWithFallbacks(LIBS[name]);
-            }));
-            return window.LIB_STATUS;
-        })();
-    })();
-    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chart.js/4.4.0/chart.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 
     <style>
         :root {
@@ -657,8 +605,8 @@
     ===================================================================== */
     const SHEET_ID  = '1F_L7b-XVAEHpmXbrGlefEEqpYOgTlJyY1oGNkntYGyw';
     const SHEET_GID = '1306276828'; // "MAY 2026" tab — from the sheet URL's gid= parameter
-    const SHEET_TAB = 'MAY2026';   // fallback label / used only if gid lookup ever fails
-    const SHEET_RANGE = 'B5:V5'; // header row 5, data below, columns B..V
+    const SHEET_TAB = 'May 2026';   // fallback label / used only if gid lookup ever fails
+    const SHEET_RANGE = 'B5:V400'; // header row 5, data below, columns B..V
 
     function buildGvizUrl(useGid){
         const sel = useGid ? `gid=${SHEET_GID}` : `sheet=${encodeURIComponent(SHEET_TAB)}`;
@@ -1299,26 +1247,9 @@
     }
 
     /* ------------------------- Boot ------------------------- */
-    window.addEventListener('load', async () => {
-        const status = (window.librariesReady) ? await window.librariesReady : {};
-        const failed = Object.entries(status).filter(([,ok]) => !ok).map(([name]) => name);
-
-        if (status.chart && window.Chart) {
-            Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
-        }
-        if (status.leaflet && window.L) {
-            try { initMap(); } catch (e) { console.error('initMap failed:', e); }
-        }
-        if (failed.length) {
-            console.error('These libraries failed to load from every CDN mirror:', failed);
-            const banner = document.getElementById('statusBanner');
-            document.getElementById('statusBannerText').textContent =
-                `Some required scripts (${failed.join(', ')}) couldn't load from any CDN provider — this usually means a ` +
-                `firewall, ad-blocker, or privacy extension is blocking cdnjs.cloudflare.com, jsdelivr.net, and unpkg.com. ` +
-                `Try disabling extensions, switching networks, or allow-listing those domains. Affected features (charts and/or the map) won't render until this is resolved.`;
-            banner.classList.add('visible');
-        }
-
+    window.addEventListener('load', () => {
+        Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
+        initMap();
         loadData(false);
     });
     </script>
