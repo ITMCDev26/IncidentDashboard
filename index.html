@@ -460,7 +460,7 @@
         <header class="dashboard-header">
             <div class="header-left">
                 <h1 id="view-title">Township Incident Dashboard</h1>
-                <p>Live Google Sheets Command Center &mdash; MAY2026</p>
+                <p>Live Google Sheets Command Center &mdash; May 2026</p>
             </div>
             <div class="header-right">
                 <div id="live-clock">00:00:00 AM</div>
@@ -477,8 +477,8 @@
 
         <section class="filter-strip">
             <div class="filter-item">
-                <label>Date</label>
-                <select id="filter-date" onchange="applyFilters()"><option value="All">All Dates</option></select>
+                <label>Month</label>
+                <select id="filter-date" onchange="applyFilters()"><option value="All">All Months</option></select>
             </div>
             <div class="filter-item">
                 <label>Groupings</label>
@@ -494,15 +494,15 @@
 
         <section class="kpi-row">
             <div class="kpi-card">
-                <div class="kpi-data"><h3>Total Incidents</h3><p id="kpi-total">&ndash;</p></div>
+                <div class="kpi-data"><h3 id="kpi-total-label">Total Incidents</h3><p id="kpi-total">&ndash;</p></div>
                 <div class="kpi-icon"><i class="fa-solid fa-clipboard-list"></i></div>
             </div>
             <div class="kpi-card blue">
-                <div class="kpi-data"><h3>Avg Daily Incidents</h3><p id="kpi-daily">&ndash;</p></div>
+                <div class="kpi-data"><h3 id="kpi-daily-label">Avg Daily Incidents</h3><p id="kpi-daily">&ndash;</p></div>
                 <div class="kpi-icon"><i class="fa-solid fa-calendar-day"></i></div>
             </div>
             <div class="kpi-card orange">
-                <div class="kpi-data"><h3>Average Response Time</h3><p id="kpi-response">&ndash;</p></div>
+                <div class="kpi-data"><h3 id="kpi-response-label">Average Response Time</h3><p id="kpi-response">&ndash;</p></div>
                 <div class="kpi-icon"><i class="fa-solid fa-hourglass-half"></i></div>
             </div>
         </section>
@@ -605,7 +605,7 @@
     ===================================================================== */
     const SHEET_ID  = '1F_L7b-XVAEHpmXbrGlefEEqpYOgTlJyY1oGNkntYGyw';
     const SHEET_GID = '1306276828'; // "MAY 2026" tab — from the sheet URL's gid= parameter
-    const SHEET_TAB = 'MAY2026';   // fallback label / used only if gid lookup ever fails
+    const SHEET_TAB = 'May 2026';   // fallback label / used only if gid lookup ever fails
     const SHEET_RANGE = 'B5:V400'; // header row 5, data below, columns B..V
 
     function buildGvizUrl(useGid){
@@ -637,6 +637,7 @@
     let tileLayer = null;
     let markerLayerGroup = null;
     let usingFallback = false;
+    let currentView = 'main';
 
     /* ------------------------- Fetch & parse ------------------------- */
     async function fetchOnce(url){
@@ -744,6 +745,8 @@
             rec.dateObj = d;
             rec.dateKey = d ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` : null;
             rec.dateLabel = d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : (rec.dateRaw || 'Unknown');
+            rec.monthKey = d ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` : null;
+            rec.monthLabel = d ? d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'Unknown';
             rec.dayOfWeek = d ? d.getDay() : null;
             rec.dayOfMonth = d ? d.getDate() : null;
             const t = parseHM(rec.time);
@@ -811,25 +814,25 @@
         const twSel = document.getElementById('filter-township');
         const prevDate = dateSel.value, prevCat = catSel.value, prevTw = twSel.value;
 
-        const dates = [...new Map(rawData.filter(d=>d.dateKey).map(d=>[d.dateKey, d.dateLabel])).entries()].sort((a,b)=>a[0].localeCompare(b[0]));
+        const months = [...new Map(rawData.filter(d=>d.monthKey).map(d=>[d.monthKey, d.monthLabel])).entries()].sort((a,b)=>a[0].localeCompare(b[0]));
         const cats = [...new Set(rawData.map(d=>d.category))].sort();
         const tws = [...new Set(rawData.map(d=>d.township))].sort();
 
-        dateSel.innerHTML = '<option value="All">All Dates</option>' + dates.map(([k,l])=>`<option value="${k}">${l}</option>`).join('');
+        dateSel.innerHTML = '<option value="All">All Months</option>' + months.map(([k,l])=>`<option value="${k}">${l}</option>`).join('');
         catSel.innerHTML = '<option value="All">All Groupings</option>' + cats.map(c=>`<option value="${c}">${c}</option>`).join('');
         twSel.innerHTML = '<option value="All">All Townships</option>' + tws.map(t=>`<option value="${t}">${t}</option>`).join('');
 
-        if (dates.some(([k])=>k===prevDate)) dateSel.value = prevDate;
+        if (months.some(([k])=>k===prevDate)) dateSel.value = prevDate;
         if (cats.includes(prevCat)) catSel.value = prevCat;
         if (tws.includes(prevTw)) twSel.value = prevTw;
     }
 
     function applyFilters(){
-        const dateVal = document.getElementById('filter-date').value;
+        const monthVal = document.getElementById('filter-date').value;
         const catVal = document.getElementById('filter-groupings').value;
         const twVal = document.getElementById('filter-township').value;
         filteredData = rawData.filter(d =>
-            (dateVal === 'All' || d.dateKey === dateVal) &&
+            (monthVal === 'All' || d.monthKey === monthVal) &&
             (catVal === 'All' || d.category === catVal) &&
             (twVal === 'All' || d.township === twVal)
         );
@@ -868,8 +871,17 @@
         return m;
     }
 
+    function isVehicular(d){ return /vehicular/i.test(d.type); }
+
     function updateKPIs(){
-        const data = filteredData;
+        // On the VEHICULAR view, the KPI cards reflect vehicular-accident records only
+        // (Medical Response and other incident types are excluded from these three numbers).
+        const data = currentView === 'vehicular' ? filteredData.filter(isVehicular) : filteredData;
+        const suffix = currentView === 'vehicular' ? ' (Vehicular)' : '';
+        document.getElementById('kpi-total-label').textContent = 'Total Incidents' + suffix;
+        document.getElementById('kpi-daily-label').textContent = 'Avg Daily Incidents' + suffix;
+        document.getElementById('kpi-response-label').textContent = 'Average Response Time' + suffix;
+
         document.getElementById('kpi-total').textContent = data.length;
         const uniqueDates = new Set(data.map(d=>d.dateKey).filter(Boolean));
         const avgDaily = uniqueDates.size ? (data.length / uniqueDates.size) : 0;
@@ -954,7 +966,7 @@
 
         let vehicular = [];
         block('vehicular-classification', () => {
-            vehicular = data.filter(d => /vehicular/i.test(d.type));
+            vehicular = data.filter(isVehicular);
             const classMap = groupCount(vehicular, 'classification');
             const classEntries = [...classMap.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8);
             renderChart('vehicularClassificationChart', { type:'bar', data:{ labels: classEntries.map(e=>e[0]||'Unspecified'), datasets:[{ label:'Cases', data: classEntries.map(e=>e[1]), backgroundColor:'#ef4444', borderRadius:6 }] },
@@ -977,11 +989,13 @@
         });
 
         block('days-of-month', () => {
+            // Fixed 1–31 axis so the trend line always spans the full month, regardless
+            // of how many days actually have incidents (missing days plot as 0).
             const dayMap = new Map();
             data.forEach(d => { if (d.dayOfMonth != null) dayMap.set(d.dayOfMonth, (dayMap.get(d.dayOfMonth)||0)+1); });
-            const days = [...dayMap.keys()].sort((a,b)=>a-b);
-            renderChart('timeDaysChart', { type:'line', data:{ labels: days.map(d=>'Day '+d), datasets:[{ label:'Daily Trend', data: days.map(d=>dayMap.get(d)), borderColor:'#f97316', fill:true, backgroundColor:'rgba(249, 115, 22, 0.08)', tension:0.3 }] },
-                options: baseOptions({ scales:{ x:{ ticks:{color:tc.text, maxRotation:0, autoSkip:true}, grid:{color:tc.grid} }, y:{ ticks:{color:tc.text}, grid:{color:tc.grid}, beginAtZero:true } }, plugins:{legend:{display:false}} }) });
+            const days = Array.from({ length: 31 }, (_, i) => i + 1);
+            renderChart('timeDaysChart', { type:'line', data:{ labels: days.map(String), datasets:[{ label:'Daily Trend', data: days.map(d=>dayMap.get(d)||0), borderColor:'#f97316', fill:true, backgroundColor:'rgba(249, 115, 22, 0.08)', tension:0.3, pointRadius:3 }] },
+                options: baseOptions({ scales:{ x:{ title:{display:true, text:'Day of Month', color:tc.text}, ticks:{color:tc.text, maxRotation:0, autoSkip:true}, grid:{color:tc.grid} }, y:{ ticks:{color:tc.text}, grid:{color:tc.grid}, beginAtZero:true, precision:0 } }, plugins:{legend:{display:false}} }) });
         });
 
         let twEntries = [];
@@ -1112,8 +1126,8 @@
         type: ['typeIncidentChart']
     };
     const viewTitles = {
-        main: 'Township Incident Dashboard', alert: 'Alert & Operations Center', vehicular: 'Vehicular Incident Analysis', time: 'Incident Temporal Dynamics',
-        township: 'Township Performance Benchmarking', type: 'Incident Categorical Profile Logs'
+        main: 'Township Incident Dashboard', vehicular: 'Vehicular Incident Analysis', time: 'Incident Temporal Dynamics',
+        alert: 'Alert & Operations Center', township: 'Township Performance Benchmarking', type: 'Incident Categorical Profile Logs'
     };
 
     function switchView(viewName, menuItem){
@@ -1123,6 +1137,8 @@
         const targetView = document.getElementById(`view-${viewName}`);
         if (targetView) targetView.classList.add('active');
         document.getElementById('view-title').textContent = viewTitles[viewName] || 'Township Dashboard';
+        currentView = viewName;
+        updateKPIs(); // KPI cards depend on which view is active (e.g. Vehicular-only totals)
         setTimeout(() => {
             (VIEW_CANVAS[viewName]||[]).forEach(id => { if (charts[id]) charts[id].resize(); });
             if (viewName === 'main' && map) map.invalidateSize();
