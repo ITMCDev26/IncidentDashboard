@@ -9,10 +9,10 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chart.js/4.4.0/chart.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 
     <style>
@@ -1263,8 +1263,44 @@
     }
 
     /* ------------------------- Boot ------------------------- */
-    window.addEventListener('load', () => {
-        Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
+    // Belt-and-suspenders: if any library failed to load from the primary CDN
+    // (blocked by a network filter/extension, transient CDN issue, etc.), retry
+    // once from a second CDN before giving up, so a single blocked request
+    // doesn't take down the whole dashboard.
+    function loadScriptFallback(src){
+        return new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = src;
+            s.onload = resolve;
+            s.onerror = () => reject(new Error('Failed to load ' + src));
+            document.head.appendChild(s);
+        });
+    }
+
+    async function ensureLibsLoaded(){
+        const fallbacks = [
+            { check: () => typeof Chart !== 'undefined', url: 'https://cdnjs.cloudflare.com/ajax/libs/chart.js/4.4.0/chart.umd.min.js', name: 'Chart.js' },
+            { check: () => typeof L !== 'undefined', url: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js', name: 'Leaflet' },
+            { check: () => typeof html2canvas !== 'undefined', url: 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', name: 'html2canvas' },
+            { check: () => typeof window.jspdf !== 'undefined', url: 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', name: 'jsPDF' }
+        ];
+        for (const lib of fallbacks) {
+            if (!lib.check()) {
+                console.warn(lib.name + ' failed to load from primary CDN, retrying from cdnjs…');
+                try { await loadScriptFallback(lib.url); } catch (e) { console.error(e.message); }
+            }
+        }
+        if (typeof Chart === 'undefined') {
+            const banner = document.getElementById('statusBanner');
+            const text = document.getElementById('statusBannerText');
+            text.textContent = 'The charting library (Chart.js) could not be loaded from either CDN. This is usually a network filter or ad-blocker blocking cdn.jsdelivr.net and cdnjs.cloudflare.com — try disabling extensions, switching networks, or check your firewall/proxy allowlist.';
+            banner.classList.add('visible');
+        }
+    }
+
+    window.addEventListener('load', async () => {
+        await ensureLibsLoaded();
+        if (typeof Chart !== 'undefined') Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
         initMap();
         loadData(false);
     });
