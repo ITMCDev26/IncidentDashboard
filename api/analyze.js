@@ -49,10 +49,12 @@ Keep the total response under 110 words. Plain text only, no markdown formatting
 DATA:
 ${JSON.stringify(rows)}`;
 
-    // Free-tier model on OpenRouter. If this specific model ever gets rate
-    // limited or rotated out, swap the string below for another :free model
-    // from https://openrouter.ai/models?order=top-weekly
-    const model = "meta-llama/llama-3.3-70b-instruct:free";
+    // Using OpenRouter's auto-router for free models instead of a hardcoded
+    // model name. The free-model catalog rotates frequently (models get added
+    // and pulled without notice) — "openrouter/free" always picks from
+    // whatever's currently available, so this won't break again when a
+    // specific model gets retired from the free tier.
+    const model = "openrouter/free";
 
     const orRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
