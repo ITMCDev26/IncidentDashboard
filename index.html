@@ -419,8 +419,9 @@
         }
 
         /* ------------------ TV / WALL DISPLAY MODE ------------------ */
-        /* Kiosk-style presentation for TVs / LED walls: sidebar and filters are
-           hidden to reclaim space, every readable element is scaled up further,
+        /* Kiosk-style presentation for TVs / LED walls: sidebar is hidden to reclaim
+           space, filters stay visible but compress to one line, every panel flexes
+           to fill exactly the remaining screen height (no scrollbar ever appears),
            and views auto-rotate so nobody needs to touch it. */
         .btn-tv-exit {
             display: none; position: fixed; top: 1.2rem; right: 1.2rem; z-index: 300;
@@ -430,24 +431,76 @@
         }
         .tv-progress { display: none; position: fixed; top: 0; left: 0; height: 4px; background: var(--brand-mint); z-index: 300; box-shadow: 0 0 10px var(--brand-mint-glow); transition: width 0.1s linear; }
 
-        body.tv-mode .sidebar, body.tv-mode .mobile-nav-toggle, body.tv-mode .filter-strip { display: none !important; }
+        body.tv-mode { overflow: hidden; height: 100vh; }
+        body.tv-mode .sidebar, body.tv-mode .mobile-nav-toggle { display: none !important; }
         body.tv-mode .btn-tv-exit, body.tv-mode .tv-progress { display: flex; }
-        body.tv-mode .main-content { margin-left: 0; width: 100%; max-width: 100%; padding: 2.6rem 4vw 3rem; }
-        body.tv-mode .dashboard-header { margin-bottom: 2rem; }
-        body.tv-mode .header-left h1 { font-size: clamp(2.2rem, 3.1vw, 4.6rem); }
-        body.tv-mode .header-left p { font-size: clamp(1.1rem, 1.2vw, 1.7rem); }
-        body.tv-mode #live-clock { font-size: clamp(2.2rem, 2.9vw, 4.2rem); }
-        body.tv-mode #live-date { font-size: clamp(1rem, 1vw, 1.5rem); }
-        body.tv-mode .kpi-row { gap: 2rem; margin-bottom: 2.5rem; }
-        body.tv-mode .kpi-card { padding: 2.2rem; }
-        body.tv-mode .kpi-data h3 { font-size: clamp(1rem, 1.05vw, 1.5rem); }
-        body.tv-mode .kpi-data p { font-size: clamp(3.2rem, 4.2vw, 6.5rem); }
-        body.tv-mode .kpi-icon { width: clamp(64px, 4.4vw, 100px); height: clamp(64px, 4.4vw, 100px); font-size: clamp(1.8rem, 2.1vw, 3rem); }
-        body.tv-mode .card-panel { min-height: clamp(420px, 46vh, 720px); padding: 2.2rem; }
-        body.tv-mode .card-title { font-size: clamp(1.5rem, 1.8vw, 2.6rem); margin-bottom: 1.6rem; }
-        body.tv-mode .chart-wrapper { min-height: clamp(300px, 34vh, 560px); }
-        body.tv-mode #incidentMap { min-height: clamp(340px, 38vh, 600px); }
-        body.tv-mode .map-legend { font-size: clamp(0.85rem, 0.9vw, 1.2rem); gap: 1.4rem; }
+
+        /* Whole content column becomes a fixed-height flex stack: every section
+           below gets either a fixed vh slice or flex:1 to share what's left,
+           so the sum can never exceed 100vh. */
+        body.tv-mode .main-content {
+            margin-left: 0; width: 100%; max-width: 100%;
+            height: 100vh; padding: 1.4vh 2vw; box-sizing: border-box;
+            display: flex; flex-direction: column; gap: 1vh; overflow: hidden;
+        }
+        body.tv-mode .status-banner { flex: 0 0 auto; }
+
+        body.tv-mode .dashboard-header { flex: 0 0 auto; margin-bottom: 0; }
+        body.tv-mode .header-left h1 { font-size: clamp(1.6rem, 2.2vw, 3.2rem); }
+        body.tv-mode .header-left p { font-size: clamp(0.8rem, 0.9vw, 1.2rem); }
+        body.tv-mode #live-clock { font-size: clamp(1.6rem, 2vw, 2.8rem); }
+        body.tv-mode #live-date { font-size: clamp(0.75rem, 0.8vw, 1.1rem); }
+
+        /* Filters: single line, always visible, compact */
+        body.tv-mode .filter-strip {
+            flex: 0 0 auto; flex-wrap: nowrap; align-items: center;
+            padding: 0.6vh 1vw; gap: 1vw; margin-bottom: 0;
+        }
+        body.tv-mode .filter-item { flex-direction: row; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
+        body.tv-mode .filter-item label { white-space: nowrap; font-size: 0.7vw; margin: 0; }
+        body.tv-mode .filter-item select { font-size: 0.75vw; padding: 0.6vh 0.8vw; }
+        body.tv-mode .btn-clear, body.tv-mode .btn-refresh { flex: 0 0 auto; font-size: 0.75vw; padding: 0.6vh 1vw; white-space: nowrap; }
+
+        body.tv-mode .kpi-row { flex: 0 0 auto; gap: 1vw; margin-bottom: 0; }
+        body.tv-mode .kpi-card { padding: 1vh 1.2vw; }
+        body.tv-mode .kpi-data h3 { font-size: clamp(0.7rem, 0.85vw, 1.2rem); margin-bottom: 2px; }
+        body.tv-mode .kpi-data p { font-size: clamp(1.6rem, 2.6vw, 3.6rem); }
+        body.tv-mode .kpi-icon { width: clamp(36px, 2.8vw, 60px); height: clamp(36px, 2.8vw, 60px); font-size: clamp(1rem, 1.4vw, 1.8rem); }
+
+        /* Active view fills all remaining space; its direct children (one or two
+           grid rows) share that space evenly — works the same whether the view
+           has 1 row (vehicular/time/alert/township) or 2 rows (main) or a single
+           panel (type), because it's driven by flex, not fixed pixel heights. */
+        body.tv-mode .dashboard-view { margin: 0; }
+        body.tv-mode .dashboard-view.active {
+            flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: 1vh;
+        }
+        body.tv-mode .dashboard-view.active > * { flex: 1 1 0; min-height: 0; margin-bottom: 0 !important; }
+        body.tv-mode .grid-2-1, body.tv-mode .grid-1-2, body.tv-mode .grid-equal { height: 100%; gap: 1vw; }
+        body.tv-mode .card-panel { min-height: 0; height: 100%; padding: 1vh 1vw; }
+        body.tv-mode .card-title { font-size: clamp(0.85rem, 1.1vw, 1.6rem); margin-bottom: 0.6vh; }
+        body.tv-mode .chart-wrapper { min-height: 0; }
+        body.tv-mode .map-card { padding: 1vh 1vw 0.6vh; }
+        body.tv-mode #incidentMap { min-height: 0; }
+        body.tv-mode .map-legend { font-size: clamp(0.6rem, 0.7vw, 1rem); gap: 0.8vw; margin-top: 0.4vh; }
+
+        /* AI Analytics panel: fixed height slice at the bottom, always visible */
+        body.tv-mode .ai-panel { flex: 0 0 20vh; }
+        body.tv-mode .ai-panel-body { font-size: clamp(0.75rem, 0.95vw, 1.3rem); }
+
+        /* ------------------ AI ANALYTICS PANEL ------------------ */
+        .ai-panel {
+            background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 16px;
+            padding: 1.2rem 1.6rem; margin-top: 1.5rem; backdrop-filter: blur(10px);
+            display: flex; flex-direction: column; min-height: 160px;
+        }
+        .ai-panel-header { display: flex; align-items: center; justify-content: space-between; flex: 0 0 auto; margin-bottom: 0.6rem; }
+        .ai-panel-header h3 { font-family: var(--font-display); font-size: clamp(1rem, 1.1vw, 1.6rem); font-weight: 700; display: flex; align-items: center; gap: 8px; }
+        .ai-panel-header h3 i { color: var(--brand-mint); }
+        .ai-status { font-size: 0.75rem; color: var(--text-muted); padding: 3px 12px; border: 1px solid var(--border-color); border-radius: 999px; white-space: nowrap; }
+        .ai-refresh-btn { background: rgba(16,185,129,0.1); color: var(--brand-mint); border: 1px solid rgba(16,185,129,0.25); border-radius: 8px; padding: 5px 12px; font-size: 0.75rem; font-weight: 600; cursor: pointer; margin-left: 10px; font-family: var(--font-body); }
+        .ai-refresh-btn:hover:not(:disabled) { background: var(--brand-mint); color: #04120c; }
+        .ai-panel-body { flex: 1 1 auto; min-height: 0; overflow: hidden; font-size: 0.9rem; line-height: 1.55; color: var(--text-main); white-space: pre-line; }
     </style>
 </head>
 <body>
@@ -628,6 +681,19 @@
             <div class="card-panel" style="min-height: 500px;">
                 <div class="card-title"><span><i class="fa-solid fa-list-check" style="color: var(--brand-mint)"></i> System Log: Types of Registered Incidents</span></div>
                 <div class="chart-wrapper"><canvas id="typeIncidentChart"></canvas></div>
+            </div>
+        </section>
+
+        <section class="ai-panel">
+            <div class="ai-panel-header">
+                <h3><i class="fa-solid fa-wand-magic-sparkles"></i> AI Analytics &mdash; Last 3 Days</h3>
+                <div style="display:flex; align-items:center;">
+                    <span class="ai-status" id="aiStatus">Idle</span>
+                    <button class="ai-refresh-btn" id="btnAiRefresh" onclick="generateAiSummary()"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
+                </div>
+            </div>
+            <div class="ai-panel-body" id="aiSummaryBody">
+                Click Refresh to generate an AI summary of incidents logged in the last 3 days.
             </div>
         </section>
 
@@ -846,6 +912,7 @@
         refreshBtn.disabled = false;
         populateFilters();
         applyFilters();
+        generateAiSummary();
     }
 
     function refreshData(){ loadData(true); }
@@ -1125,6 +1192,52 @@
 
     function escapeHtml(str){
         return String(str||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    /* ------------------------- AI Analytics (Gemini, via /api/analyze) ------------------------- */
+    async function generateAiSummary(){
+        const statusEl = document.getElementById('aiStatus');
+        const bodyEl = document.getElementById('aiSummaryBody');
+        const btn = document.getElementById('btnAiRefresh');
+        if (!statusEl || !bodyEl) return; // panel not present
+
+        const threeDaysAgo = new Date();
+        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+        const recent = rawData.filter(d => d.dateObj && d.dateObj >= threeDaysAgo);
+
+        if (recent.length === 0) {
+            statusEl.textContent = 'No data';
+            bodyEl.textContent = 'No incidents were recorded in the past 3 days.';
+            return;
+        }
+
+        statusEl.textContent = 'Analyzing…';
+        if (btn) btn.disabled = true;
+        bodyEl.textContent = 'Generating AI summary of the last 3 days…';
+
+        // Keep the payload small — only the fields the AI actually needs
+        const compact = recent.map(d => ({
+            type: d.type, classification: d.classification, alertLevel: d.alertLevel,
+            township: d.township, location: d.location, date: d.dateLabel, time: d.time,
+            responseMinutes: d.responseMinutes, resolved: d.resolvedYes ? 'Yes' : 'No'
+        }));
+
+        try {
+            const res = await fetch('/api/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rows: compact })
+            });
+            if (!res.ok) throw new Error('API returned ' + res.status);
+            const data = await res.json();
+            bodyEl.textContent = data.summary || 'No summary returned.';
+            statusEl.textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        } catch (err) {
+            console.error('AI analysis failed:', err);
+            statusEl.textContent = 'Error';
+            bodyEl.textContent = "Couldn't generate the AI summary right now. Check that GEMINI_API_KEY is set in Vercel and /api/analyze is deployed.";
+        }
+        if (btn) btn.disabled = false;
     }
 
     /* ------------------------- Theme toggle ------------------------- */
