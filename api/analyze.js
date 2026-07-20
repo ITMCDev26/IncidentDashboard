@@ -1,23 +1,27 @@
 // Vercel Serverless Function: /api/analyze
 // Takes the last 3 days of incident records from the Megaworld dashboard and
-// asks Gemini (free tier) for a short summary + cautious trend note.
+// asks a free OpenRouter model for a short summary + cautious trend note.
 //
 // SETUP:
-// 1. Get a free Gemini API key at https://aistudio.google.com/apikey
-// 2. In Vercel: Project Settings → Environment Variables →
-//    add GEMINI_API_KEY = <your key>
-// 3. Redeploy.
+// 1. Sign up (free, no credit card) at https://openrouter.ai
+// 2. Go to https://openrouter.ai/keys → Create Key → copy it (starts with sk-or-...)
+// 3. In Vercel: Project Settings → Environment Variables →
+//    add OPENROUTER_API_KEY = <your key>
+// 4. Redeploy.
+//
+// Free tier: ~50 requests/day per key (1,000/day if you ever add $10 lifetime
+// credit — not required). Plenty for a dashboard that refreshes periodically.
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     return res.status(500).json({
       error: "Missing API key",
-      details: "GEMINI_API_KEY is not set in Vercel's Environment Variables. Add it in Project Settings, then redeploy.",
+      details: "OPENROUTER_API_KEY is not set in Vercel's Environment Variables. Add it in Project Settings, then redeploy.",
     });
   }
 
@@ -45,24 +49,24 @@ Keep the total response under 110 words. Plain text only, no markdown formatting
 DATA:
 ${JSON.stringify(rows)}`;
 
-    // "gemini-flash-latest" is the current documented alias for Google's free-tier
-    // flash model — more resilient than pinning an exact dated model name, which
-    // can be renamed/retired and cause 404s from Gemini's side.
-    const model = "gemini-flash-latest";
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    // Free-tier model on OpenRouter. If this specific model ever gets rate
+    // limited or rotated out, swap the string below for another :free model
+    // from https://openrouter.ai/models?order=top-weekly
+    const model = "meta-llama/llama-3.3-70b-instruct:free";
 
-    const geminiRes = await fetch(url, {
+    const orRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
+        "Authorization": `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        model,
+        messages: [{ role: "user", content: prompt }],
       }),
     });
 
-    const rawText = await geminiRes.text();
+    const rawText = await orRes.text();
     let parsed;
     try {
       parsed = JSON.parse(rawText);
@@ -70,20 +74,17 @@ ${JSON.stringify(rows)}`;
       parsed = null;
     }
 
-    if (!geminiRes.ok) {
-      // Surface Gemini's actual error message so it's visible on the dashboard
-      // itself, not just in Vercel's logs.
-      const geminiMessage = parsed?.error?.message || rawText || "Unknown error from Gemini.";
-      console.error("Gemini API error:", geminiMessage);
+    if (!orRes.ok) {
+      // Surface the real error so it's visible on the dashboard itself.
+      const orMessage = parsed?.error?.message || rawText || "Unknown error from OpenRouter.";
+      console.error("OpenRouter API error:", orMessage);
       return res.status(502).json({
-        error: "Gemini API request failed",
-        details: `[${geminiRes.status}] ${geminiMessage}`,
+        error: "OpenRouter API request failed",
+        details: `[${orRes.status}] ${orMessage}`,
       });
     }
 
-    const summary =
-      parsed?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ||
-      "Gemini returned no content.";
+    const summary = parsed?.choices?.[0]?.message?.content?.trim() || "OpenRouter returned no content.";
 
     return res.status(200).json({ summary });
   } catch (err) {
