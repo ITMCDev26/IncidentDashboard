@@ -26,7 +26,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { rows } = req.body;
+    const { rows, focus } = req.body;
 
     if (!rows || rows.length === 0) {
       return res.status(200).json({
@@ -37,6 +37,8 @@ export default async function handler(req, res) {
     const prompt = `You are an operations analyst for the Megaworld Township incident reporting system.
 Below is JSON data for all incidents logged in the last 3 days (type, classification, alert level,
 township, location, date, time, response time in minutes, resolved status).
+
+${focus ? `For this particular analysis: ${focus}` : ""}
 
 Write a concise analysis for display on a wall-mounted TV dashboard. Structure it as:
 1. A one-paragraph summary of what happened (volume, most common incident type, notable townships/locations).

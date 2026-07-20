@@ -451,15 +451,17 @@
         body.tv-mode #live-clock { font-size: clamp(1.6rem, 2vw, 2.8rem); }
         body.tv-mode #live-date { font-size: clamp(0.75rem, 0.8vw, 1.1rem); }
 
-        /* Filters: single line, always visible, compact */
+        /* Filters: same clean look as normal mode (label above dropdown, card
+           background, evenly spaced) — just scaled down to fit the TV's
+           vertical budget. No layout change, only sizing. */
         body.tv-mode .filter-strip {
-            flex: 0 0 auto; flex-wrap: nowrap; align-items: center;
-            padding: 0.6vh 1vw; gap: 1vw; margin-bottom: 0;
+            flex: 0 0 auto; flex-wrap: nowrap; align-items: flex-end;
+            padding: 0.8vh 1.2vw; gap: 1.2vw; margin-bottom: 0;
         }
-        body.tv-mode .filter-item { flex-direction: row; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
-        body.tv-mode .filter-item label { white-space: nowrap; font-size: 0.7vw; margin: 0; }
-        body.tv-mode .filter-item select { font-size: 0.75vw; padding: 0.6vh 0.8vw; }
-        body.tv-mode .btn-clear, body.tv-mode .btn-refresh { flex: 0 0 auto; font-size: 0.75vw; padding: 0.6vh 1vw; white-space: nowrap; }
+        body.tv-mode .filter-item { flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 auto; }
+        body.tv-mode .filter-item label { font-size: 0.65vw; }
+        body.tv-mode .filter-item select { font-size: 0.8vw; padding: 0.7vh 0.9vw; }
+        body.tv-mode .btn-clear, body.tv-mode .btn-refresh { font-size: 0.8vw; padding: 0.7vh 1.1vw; white-space: nowrap; }
 
         body.tv-mode .kpi-row { flex: 0 0 auto; gap: 1vw; margin-bottom: 0; }
         body.tv-mode .kpi-card { padding: 1vh 1.2vw; }
@@ -911,8 +913,8 @@
         refreshBtn.classList.remove('loading');
         refreshBtn.disabled = false;
         populateFilters();
-        applyFilters();
-        generateAiSummary();
+        clearAiSummaryCache(); // fresh data loaded — old cached summaries are stale
+        applyFilters(); // this also triggers generateAiSummary() for the current view
     }
 
     function refreshData(){ loadData(true); }
@@ -946,6 +948,8 @@
             (twVal === 'All' || d.township === twVal)
         );
         renderAll();
+        clearAiSummaryCache();
+        generateAiSummary();
     }
 
     function resetAllFilters(){
@@ -1195,19 +1199,46 @@
     }
 
     /* ------------------------- AI Analytics (Gemini, via /api/analyze) ------------------------- */
-    async function generateAiSummary(){
+    // Each dashboard view gets its own AI summary, since each view highlights
+    // different data. Cached per view so switching tabs is instant after the
+    // first generation; the cache is cleared whenever data/filters change or
+    // the 15-minute auto-refresh timer fires.
+    const aiSummaryCache = {};
+    const VIEW_FOCUS = {
+        main: 'Give a general operations overview across all incident types and townships.',
+        vehicular: 'Focus specifically on vehicular/traffic-related incidents — patterns in location, timing, and response time.',
+        time: 'Focus on when incidents are happening — time-of-day patterns, peak hours, and day-to-day timing trends.',
+        alert: 'Focus on alert/severity levels — how many are Blue/Yellow/Red, and whether severity is trending up or down.',
+        township: 'Focus on differences between townships — which townships have the most incidents or slowest response times.',
+        type: 'Focus on the mix of incident types/classifications and which categories are most common.'
+    };
+
+    function clearAiSummaryCache(){
+        Object.keys(aiSummaryCache).forEach(k => delete aiSummaryCache[k]);
+    }
+
+    async function generateAiSummary(forceRefresh){
         const statusEl = document.getElementById('aiStatus');
         const bodyEl = document.getElementById('aiSummaryBody');
         const btn = document.getElementById('btnAiRefresh');
         if (!statusEl || !bodyEl) return; // panel not present
 
+        const view = currentView || 'main';
+
+        if (!forceRefresh && aiSummaryCache[view]) {
+            bodyEl.textContent = aiSummaryCache[view].summary;
+            statusEl.textContent = 'Updated ' + aiSummaryCache[view].time;
+            return;
+        }
+
         const threeDaysAgo = new Date();
         threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-        const recent = rawData.filter(d => d.dateObj && d.dateObj >= threeDaysAgo);
+        const base = view === 'vehicular' ? filteredData.filter(isVehicular) : filteredData;
+        const recent = base.filter(d => d.dateObj && d.dateObj >= threeDaysAgo);
 
         if (recent.length === 0) {
             statusEl.textContent = 'No data';
-            bodyEl.textContent = 'No incidents were recorded in the past 3 days.';
+            bodyEl.textContent = 'No incidents were recorded in the past 3 days for this view.';
             return;
         }
 
@@ -1226,14 +1257,17 @@
             const res = await fetch('/api/analyze', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ rows: compact })
+                body: JSON.stringify({ rows: compact, focus: VIEW_FOCUS[view] || VIEW_FOCUS.main })
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
                 throw new Error(data.details || data.error || ('API returned ' + res.status));
             }
-            bodyEl.textContent = data.summary || 'No summary returned.';
-            statusEl.textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const summaryText = data.summary || 'No summary returned.';
+            const timeLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            aiSummaryCache[view] = { summary: summaryText, time: timeLabel };
+            bodyEl.textContent = summaryText;
+            statusEl.textContent = 'Updated ' + timeLabel;
         } catch (err) {
             console.error('AI analysis failed:', err);
             statusEl.textContent = 'Error';
@@ -1241,6 +1275,14 @@
         }
         if (btn) btn.disabled = false;
     }
+
+    // Auto-refresh the AI summary every 15 minutes. Only the currently active
+    // view is force-regenerated to conserve the free API quota; other views
+    // simply regenerate the next time someone switches to them.
+    setInterval(() => {
+        clearAiSummaryCache();
+        generateAiSummary(true);
+    }, 15 * 60 * 1000);
 
     /* ------------------------- Theme toggle ------------------------- */
     function toggleTheme(){
@@ -1296,6 +1338,7 @@
         document.getElementById('view-title').textContent = viewTitles[viewName] || 'Township Dashboard';
         currentView = viewName;
         updateKPIs(); // KPI cards depend on which view is active (e.g. Vehicular-only totals)
+        generateAiSummary(); // shows cached summary for this view instantly, or generates a new one
         setTimeout(() => {
             (VIEW_CANVAS[viewName]||[]).forEach(id => { if (charts[id]) charts[id].resize(); });
             if (viewName === 'main' && map) map.invalidateSize();
