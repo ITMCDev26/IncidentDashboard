@@ -1228,14 +1228,16 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ rows: compact })
             });
-            if (!res.ok) throw new Error('API returned ' + res.status);
-            const data = await res.json();
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.details || data.error || ('API returned ' + res.status));
+            }
             bodyEl.textContent = data.summary || 'No summary returned.';
             statusEl.textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         } catch (err) {
             console.error('AI analysis failed:', err);
             statusEl.textContent = 'Error';
-            bodyEl.textContent = "Couldn't generate the AI summary right now. Check that GEMINI_API_KEY is set in Vercel and /api/analyze is deployed.";
+            bodyEl.textContent = "Couldn't generate the AI summary: " + err.message;
         }
         if (btn) btn.disabled = false;
     }

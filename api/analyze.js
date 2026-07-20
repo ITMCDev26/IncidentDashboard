@@ -16,7 +16,8 @@ export default async function handler(req, res) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return res.status(500).json({
-      error: "GEMINI_API_KEY is not set in Vercel environment variables.",
+      error: "Missing API key",
+      details: "GEMINI_API_KEY is not set in Vercel's Environment Variables. Add it in Project Settings, then redeploy.",
     });
   }
 
@@ -44,7 +45,10 @@ Keep the total response under 110 words. Plain text only, no markdown formatting
 DATA:
 ${JSON.stringify(rows)}`;
 
-    const model = "gemini-2.5-flash"; // free-tier model
+    // "gemini-flash-latest" is the current documented alias for Google's free-tier
+    // flash model — more resilient than pinning an exact dated model name, which
+    // can be renamed/retired and cause 404s from Gemini's side.
+    const model = "gemini-flash-latest";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
     const geminiRes = await fetch(url, {
@@ -58,20 +62,35 @@ ${JSON.stringify(rows)}`;
       }),
     });
 
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      console.error("Gemini API error:", errText);
-      return res.status(502).json({ error: "Gemini API request failed." });
+    const rawText = await geminiRes.text();
+    let parsed;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      parsed = null;
     }
 
-    const geminiData = await geminiRes.json();
+    if (!geminiRes.ok) {
+      // Surface Gemini's actual error message so it's visible on the dashboard
+      // itself, not just in Vercel's logs.
+      const geminiMessage = parsed?.error?.message || rawText || "Unknown error from Gemini.";
+      console.error("Gemini API error:", geminiMessage);
+      return res.status(502).json({
+        error: "Gemini API request failed",
+        details: `[${geminiRes.status}] ${geminiMessage}`,
+      });
+    }
+
     const summary =
-      geminiData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ||
+      parsed?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ||
       "Gemini returned no content.";
 
     return res.status(200).json({ summary });
   } catch (err) {
     console.error("analyze.js error:", err);
-    return res.status(500).json({ error: "Internal server error." });
+    return res.status(500).json({
+      error: "Internal server error",
+      details: err.message,
+    });
   }
 }
