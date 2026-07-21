@@ -26,30 +26,41 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { rows, focus } = req.body;
+    const { monthlyStats, recentRows, focus } = req.body;
 
-    if (!rows || rows.length === 0) {
+    if (!monthlyStats && (!recentRows || recentRows.length === 0)) {
       return res.status(200).json({
-        summary: "No incident reports were recorded in the past 3 days.",
+        summary: "No incident data available yet for this view.",
       });
     }
 
-    const prompt = `You are an operations analyst for the Megaworld Township incident reporting system.
-Below is JSON data for all incidents logged in the last 3 days (type, classification, alert level,
-township, location, date, time, response time in minutes, resolved status).
+    const prompt = `You are an operations analyst briefing decision-makers for the Megaworld Township
+incident reporting system. You have two inputs:
+
+1. MONTHLY_STATS — aggregated statistics for ${monthlyStats?.month || "the current period"} (the whole month, not just recent days).
+2. RECENT_INCIDENTS — the individual, detailed incident records from the last 3 days only.
 
 ${focus ? `For this particular analysis: ${focus}` : ""}
 
-Write a concise analysis for display on a wall-mounted TV dashboard. Structure it as:
-1. A one-paragraph summary of what happened (volume, most common incident type, notable townships/locations).
-2. Key trend observation (increasing/decreasing/stable, any spikes, response time patterns).
-3. A short, cautious forward-looking note (1-2 sentences) — do not overstate confidence, this is a
-   simple pattern observation, not a guarantee.
+Write a decision-oriented briefing for display on a wall-mounted TV dashboard, aimed at helping
+management decide where to act. Structure it as:
+1. Monthly context (1-2 sentences): the overall pattern this month — volume, resolution rate, average
+   response time, and which incident type/township stands out most.
+2. Last 3 days (1-2 sentences): what's happening right now, and how it compares to the monthly norm
+   (higher/lower/in line, any spike or lull).
+3. Recommended action (1-2 sentences): a specific, concrete suggestion for what management should
+   consider doing next based on this data (e.g. where to allocate patrols/staff, what to monitor,
+   what's working well enough to leave alone). Be direct and actionable, not vague. Do not overstate
+   confidence — this is a pattern-based suggestion, not a guarantee.
 
-Keep the total response under 110 words. Plain text only, no markdown formatting, no headers.
+Keep the total response under 130 words. Plain text only, no markdown formatting, no headers, no
+bullet symbols — write it as flowing prose paragraphs.
 
-DATA:
-${JSON.stringify(rows)}`;
+MONTHLY_STATS:
+${JSON.stringify(monthlyStats)}
+
+RECENT_INCIDENTS (last 3 days):
+${JSON.stringify(recentRows)}`;
 
     // Using OpenRouter's auto-router for free models instead of a hardcoded
     // model name. The free-model catalog rotates frequently (models get added

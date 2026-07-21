@@ -551,12 +551,12 @@
         <header class="dashboard-header">
             <div class="header-left">
                 <h1 id="view-title">Township Incident Dashboard</h1>
-                <p>Live Google Sheets Command Center &mdash; May 2026</p>
+                <p>Integrated Township Management Corporation &mdash; January to June 2026</p>
             </div>
             <div class="header-right">
                 <div id="live-clock">00:00:00 AM</div>
                 <div id="live-date">JULY 15, 2026</div>
-                <div id="data-status"><i class="fa-solid fa-circle-notch fa-spin"></i> Connecting to Google Sheets&hellip;</div>
+                <div id="data-status"><i class="fa-solid fa-circle-notch fa-spin"></i> Connecting to Database&hellip;</div>
             </div>
         </header>
 
@@ -747,7 +747,7 @@
     let tvProgressTimer = null;
     let tvViewIndex = 0;
     const TV_VIEW_ORDER = ['main','vehicular','time','alert','township','type'];
-    const TV_ROTATE_MS = 15000; // seconds per view while in TV mode
+    const TV_ROTATE_MS = 30000; // seconds per view while in TV mode
 
     /* ------------------------- Fetch & parse ------------------------- */
     async function fetchOnce(url){
@@ -755,10 +755,10 @@
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const text = await res.text();
         const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);?\s*$/);
-        if (!match) throw new Error('Unexpected response from Google Sheets (is the sheet shared as "Anyone with the link can view"?)');
+        if (!match) throw new Error('Unexpected response from Database (is the sheet shared as "Anyone with the link can view"?)');
         const json = JSON.parse(match[1]);
         if (json.status === 'error') {
-            const msg = (json.errors && json.errors[0] && json.errors[0].detailed_message) || 'Google Sheets query error';
+            const msg = (json.errors && json.errors[0] && json.errors[0].detailed_message) || 'Database query error';
             throw new Error(msg);
         }
         const rows = json.table.rows || [];
@@ -1198,11 +1198,11 @@
         return String(str||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
 
-    /* ------------------------- AI Analytics (Gemini, via /api/analyze) ------------------------- */
+    /* ------------------------- AI Analytics (via /api/analyze) ------------------------- */
     // Each dashboard view gets its own AI summary, since each view highlights
     // different data. Cached per view so switching tabs is instant after the
     // first generation; the cache is cleared whenever data/filters change or
-    // the 15-minute auto-refresh timer fires.
+    // the 6-hour auto-refresh timer fires.
     const aiSummaryCache = {};
     const VIEW_FOCUS = {
         main: 'Give a general operations overview across all incident types and townships.',
@@ -1215,6 +1215,38 @@
 
     function clearAiSummaryCache(){
         Object.keys(aiSummaryCache).forEach(k => delete aiSummaryCache[k]);
+    }
+
+    // Aggregates a full month of records into compact stats (counts, top
+    // categories, resolution rate, etc.) instead of sending every raw row —
+    // keeps the payload small even when a month has 1,000+ incidents.
+    function buildMonthlyStats(data, monthLabel){
+        const total = data.length;
+        const byType = {}, byAlert = {}, byTownship = {}, byDay = {};
+        let resolvedCount = 0, responseSum = 0, responseCount = 0;
+        data.forEach(d => {
+            const t = d.type || 'Unknown'; byType[t] = (byType[t]||0) + 1;
+            const a = d.alertLevel || 'Unknown'; byAlert[a] = (byAlert[a]||0) + 1;
+            const tw = d.township || 'Unknown'; byTownship[tw] = (byTownship[tw]||0) + 1;
+            if (d.resolvedYes) resolvedCount++;
+            if (d.responseMinutes != null) { responseSum += d.responseMinutes; responseCount++; }
+            if (d.dateKey) byDay[d.dateKey] = (byDay[d.dateKey]||0) + 1;
+        });
+        const topN = (obj, n=5) => Object.entries(obj).sort((a,b) => b[1]-a[1]).slice(0, n).map(([k,v]) => `${k}: ${v}`);
+        const dayCounts = Object.keys(byDay).length;
+        const avgDaily = dayCounts ? (total / dayCounts) : 0;
+        const peakDay = Object.entries(byDay).sort((a,b) => b[1]-a[1])[0];
+        return {
+            month: monthLabel || 'N/A',
+            totalIncidents: total,
+            avgDailyIncidents: avgDaily.toFixed(1),
+            peakDay: peakDay ? `${peakDay[0]} (${peakDay[1]} incidents)` : 'N/A',
+            resolutionRatePct: total ? ((resolvedCount/total)*100).toFixed(1) : '0',
+            avgResponseMinutes: responseCount ? (responseSum/responseCount).toFixed(1) : 'N/A',
+            topTypes: topN(byType),
+            topAlertLevels: topN(byAlert, 3),
+            topTownships: topN(byTownship),
+        };
     }
 
     async function generateAiSummary(forceRefresh){
@@ -1231,33 +1263,53 @@
             return;
         }
 
-        const threeDaysAgo = new Date();
-        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
         const base = view === 'vehicular' ? filteredData.filter(isVehicular) : filteredData;
-        const recent = base.filter(d => d.dateObj && d.dateObj >= threeDaysAgo);
 
-        if (recent.length === 0) {
+        if (base.length === 0) {
             statusEl.textContent = 'No data';
-            bodyEl.textContent = 'No incidents were recorded in the past 3 days for this view.';
+            // Only overwrite the panel if there's nothing useful already shown
+            if (!aiSummaryCache[view]) bodyEl.textContent = 'No incident data available for this view yet.';
             return;
         }
 
+        // Whole month: use whichever month is most recently represented in
+        // this view's data (matches what's actually loaded from the sheet).
+        const monthKeys = [...new Set(base.map(d => d.monthKey).filter(Boolean))].sort();
+        const latestMonthKey = monthKeys[monthKeys.length - 1];
+        const monthData = latestMonthKey ? base.filter(d => d.monthKey === latestMonthKey) : base;
+        const monthLabel = (monthData[0] && monthData[0].monthLabel) || latestMonthKey || 'this period';
+        const monthlyStats = buildMonthlyStats(monthData, monthLabel);
+
+        // Last 3 days: kept as detailed rows for near-term specifics
+        const threeDaysAgo = new Date();
+        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+        const recentRows = base
+            .filter(d => d.dateObj && d.dateObj >= threeDaysAgo)
+            .map(d => ({
+                type: d.type, classification: d.classification, alertLevel: d.alertLevel,
+                township: d.township, location: d.location, date: d.dateLabel, time: d.time,
+                responseMinutes: d.responseMinutes, resolved: d.resolvedYes ? 'Yes' : 'No'
+            }));
+
         statusEl.textContent = 'Analyzing…';
         if (btn) btn.disabled = true;
-        bodyEl.textContent = 'Generating AI summary of the last 3 days…';
-
-        // Keep the payload small — only the fields the AI actually needs
-        const compact = recent.map(d => ({
-            type: d.type, classification: d.classification, alertLevel: d.alertLevel,
-            township: d.township, location: d.location, date: d.dateLabel, time: d.time,
-            responseMinutes: d.responseMinutes, resolved: d.resolvedYes ? 'Yes' : 'No'
-        }));
+        // Deliberately NOT clearing bodyEl here — the previous analysis stays
+        // visible on screen the entire time a new one is being generated, so
+        // the panel never flashes a "loading" or blank state. Only the small
+        // status pill above it changes.
+        if (!bodyEl.textContent.trim()) {
+            bodyEl.textContent = 'Generating AI analysis…'; // first-ever load only
+        }
 
         try {
             const res = await fetch('/api/analyze', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ rows: compact, focus: VIEW_FOCUS[view] || VIEW_FOCUS.main })
+                body: JSON.stringify({
+                    monthlyStats,
+                    recentRows,
+                    focus: VIEW_FOCUS[view] || VIEW_FOCUS.main
+                })
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
@@ -1270,19 +1322,26 @@
             statusEl.textContent = 'Updated ' + timeLabel;
         } catch (err) {
             console.error('AI analysis failed:', err);
-            statusEl.textContent = 'Error';
-            bodyEl.textContent = "Couldn't generate the AI summary: " + err.message;
+            // Keep showing the last successful analysis rather than replacing
+            // it with an error message — only the status pill reflects the
+            // failure. If there has never been a successful analysis yet,
+            // show a calm one-line notice instead of a scary error dump.
+            statusEl.textContent = 'Update failed — showing last analysis';
+            if (!aiSummaryCache[view]) {
+                bodyEl.textContent = 'AI analysis is temporarily unavailable. It will retry automatically.';
+                statusEl.textContent = 'Unavailable';
+            }
         }
         if (btn) btn.disabled = false;
     }
 
-    // Auto-refresh the AI summary every 15 minutes. Only the currently active
-    // view is force-regenerated to conserve the free API quota; other views
-    // simply regenerate the next time someone switches to them.
+    // Auto-refresh every 6 hours. Only the currently active view is
+    // force-regenerated to conserve the free API quota; other views simply
+    // regenerate the next time someone switches to them.
     setInterval(() => {
         clearAiSummaryCache();
         generateAiSummary(true);
-    }, 15 * 60 * 1000);
+    }, 6 * 60 * 60 * 1000);
 
     /* ------------------------- Theme toggle ------------------------- */
     function toggleTheme(){
