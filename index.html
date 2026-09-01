@@ -573,7 +573,7 @@
             </div>
             <div class="filter-item">
                 <label>Groupings</label>
-                <select id="filter-groupings" onchange="applyFilters()"><option value="All">All Groupings</option></select>
+                <select id="filter-groupings" onchange="onGroupingChange()"><option value="All">All Groupings</option></select>
             </div>
             <div class="filter-item">
                 <label>Township</label>
@@ -947,24 +947,37 @@
 
     function refreshData(){ loadData(true); }
 
+    function townshipsForRegion(region){
+        if (!region || region === 'All') return [...new Set(rawData.map(d=>d.township))].sort();
+        return [...new Set(rawData.filter(d=>d.region===region).map(d=>d.township))].sort();
+    }
+
+    // Rebuilds the Township dropdown to only list townships that belong to
+    // the currently selected Groupings/region (or all townships if "All").
+    function updateTownshipOptions(){
+        const catSel = document.getElementById('filter-groupings');
+        const twSel = document.getElementById('filter-township');
+        const prevTw = twSel.value;
+        const tws = townshipsForRegion(catSel.value);
+        twSel.innerHTML = '<option value="All">All Townships</option>' + tws.map(t=>`<option value="${t}">${t}</option>`).join('');
+        twSel.value = tws.includes(prevTw) ? prevTw : 'All';
+    }
+
     function populateFilters(){
         const dateSel = document.getElementById('filter-date');
         const catSel = document.getElementById('filter-groupings');
-        const twSel = document.getElementById('filter-township');
-        const prevDate = dateSel.value, prevCat = catSel.value, prevTw = twSel.value;
+        const prevDate = dateSel.value, prevCat = catSel.value;
 
         const months = [...new Map(rawData.filter(d=>d.monthKey).map(d=>[d.monthKey, d.monthLabel])).entries()].sort((a,b)=>a[0].localeCompare(b[0]));
-        // Groupings are a fixed set of regions (not derived from the data),
-        // so every option is always available regardless of what's loaded.
-        const tws = [...new Set(rawData.map(d=>d.township))].sort();
 
         dateSel.innerHTML = '<option value="All">All Months</option>' + months.map(([k,l])=>`<option value="${k}">${l}</option>`).join('');
         catSel.innerHTML = '<option value="All">All Groupings</option>' + REGION_ORDER.map(r=>`<option value="${r}">${r}</option>`).join('');
-        twSel.innerHTML = '<option value="All">All Townships</option>' + tws.map(t=>`<option value="${t}">${t}</option>`).join('');
 
         if (months.some(([k])=>k===prevDate)) dateSel.value = prevDate;
         if (REGION_ORDER.includes(prevCat)) catSel.value = prevCat;
-        if (tws.includes(prevTw)) twSel.value = prevTw;
+
+        // Township options depend on whichever Grouping/region is selected.
+        updateTownshipOptions();
     }
 
     function applyFilters(){
@@ -980,9 +993,17 @@
         generateAiSummary(); // shows cached summary instantly; only fetches a new one if it's due
     }
 
+    // Called when the Groupings dropdown changes: narrows the Township
+    // dropdown to that region's townships first, then re-applies filters.
+    function onGroupingChange(){
+        updateTownshipOptions();
+        applyFilters();
+    }
+
     function resetAllFilters(){
         document.getElementById('filter-date').value = 'All';
         document.getElementById('filter-groupings').value = 'All';
+        updateTownshipOptions();
         document.getElementById('filter-township').value = 'All';
         applyFilters();
     }
