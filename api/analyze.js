@@ -45,7 +45,7 @@ ${focus ? `For this particular analysis: ${focus}` : ""}
 Write a decision-oriented briefing for display on a wall-mounted TV dashboard, aimed at helping
 management decide where to act. Structure it as:
 1. Monthly context (1-2 sentences): the overall pattern this month — volume, resolution rate, average
-   response time, and which incident type/township stands out most.
+   response time (given in seconds), and which incident type/township stands out most.
 2. Last 3 days (1-2 sentences): what's happening right now, and how it compares to the monthly norm
    (higher/lower/in line, any spike or lull).
 3. Recommended action (1-2 sentences): a specific, concrete suggestion for what management should

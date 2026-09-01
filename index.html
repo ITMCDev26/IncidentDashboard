@@ -691,7 +691,7 @@
                 <h3><i class="fa-solid fa-wand-magic-sparkles"></i> AI Analytics &mdash; Last 3 Days</h3>
                 <div style="display:flex; align-items:center;">
                     <span class="ai-status" id="aiStatus">Idle</span>
-                    <button class="ai-refresh-btn" id="btnAiRefresh" onclick="generateAiSummary()"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
+                    <button class="ai-refresh-btn" id="btnAiRefresh" onclick="generateAiSummary(true)"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
                 </div>
             </div>
             <div class="ai-panel-body" id="aiSummaryBody">
@@ -846,12 +846,35 @@
         return { lat: parts[0], lng: parts[1] };
     }
 
+    // Region groupings: maps each township code to its parent region so the
+    // "Groupings" filter (GERI / JV / NCR / Visayas) can slice the data.
+    const REGION_TOWNSHIPS = {
+        GERI: ['BNC', 'SCEA', 'TLC'],
+        JV: ['CTA', 'MGEA'],
+        NCR: ['ACEA', 'MTCEA', 'MWEA', 'NCEA', 'UBEA'],
+        Visayas: ['IBPEA', 'NGH', 'TMNEA', 'TUEA']
+    };
+    const REGION_ORDER = Object.keys(REGION_TOWNSHIPS);
+    const TOWNSHIP_TO_REGION = {};
+    Object.entries(REGION_TOWNSHIPS).forEach(([region, tws]) => {
+        tws.forEach(tw => { TOWNSHIP_TO_REGION[tw.toUpperCase()] = region; });
+    });
+    function regionForTownship(tw){
+        if (!tw) return 'Unspecified';
+        return TOWNSHIP_TO_REGION[String(tw).trim().toUpperCase()] || 'Unspecified';
+    }
+
     function transformRows(rawRows){
+        // Anything dated after "today" is treated as a bad/future data entry
+        // and dropped so it never shows up in KPIs, charts, or the AI summary.
+        const todayEnd = new Date();
+        todayEnd.setHours(23, 59, 59, 999);
         return rawRows.map(cols => {
             const rec = {};
             COLS.forEach((key, i) => rec[key] = cols[i] || '');
             if (!rec.type) return null; // blank/spacer row
             const d = parseIncidentDate(rec.dateRaw);
+            if (d && d > todayEnd) return null; // future-dated row — ignore
             rec.dateObj = d;
             rec.dateKey = d ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` : null;
             rec.dateLabel = d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : (rec.dateRaw || 'Unknown');
@@ -867,6 +890,7 @@
             rec.category = rec.category || 'Unspecified';
             rec.township = rec.township || 'Unspecified';
             rec.alertLevel = rec.alertLevel || 'Unspecified';
+            rec.region = regionForTownship(rec.township);
             return rec;
         }).filter(Boolean);
     }
@@ -913,7 +937,11 @@
         refreshBtn.classList.remove('loading');
         refreshBtn.disabled = false;
         populateFilters();
-        clearAiSummaryCache(); // fresh data loaded — old cached summaries are stale
+        // Note: we deliberately do NOT clear the AI summary cache here.
+        // Data can reload far more often than the AI should be re-queried —
+        // the AI summary only regenerates on its own 12-hour cadence (see
+        // generateAiSummary), so the previous summary is sustained across
+        // ordinary data refreshes.
         applyFilters(); // this also triggers generateAiSummary() for the current view
     }
 
@@ -926,15 +954,16 @@
         const prevDate = dateSel.value, prevCat = catSel.value, prevTw = twSel.value;
 
         const months = [...new Map(rawData.filter(d=>d.monthKey).map(d=>[d.monthKey, d.monthLabel])).entries()].sort((a,b)=>a[0].localeCompare(b[0]));
-        const cats = [...new Set(rawData.map(d=>d.category))].sort();
+        // Groupings are a fixed set of regions (not derived from the data),
+        // so every option is always available regardless of what's loaded.
         const tws = [...new Set(rawData.map(d=>d.township))].sort();
 
         dateSel.innerHTML = '<option value="All">All Months</option>' + months.map(([k,l])=>`<option value="${k}">${l}</option>`).join('');
-        catSel.innerHTML = '<option value="All">All Groupings</option>' + cats.map(c=>`<option value="${c}">${c}</option>`).join('');
+        catSel.innerHTML = '<option value="All">All Groupings</option>' + REGION_ORDER.map(r=>`<option value="${r}">${r}</option>`).join('');
         twSel.innerHTML = '<option value="All">All Townships</option>' + tws.map(t=>`<option value="${t}">${t}</option>`).join('');
 
         if (months.some(([k])=>k===prevDate)) dateSel.value = prevDate;
-        if (cats.includes(prevCat)) catSel.value = prevCat;
+        if (REGION_ORDER.includes(prevCat)) catSel.value = prevCat;
         if (tws.includes(prevTw)) twSel.value = prevTw;
     }
 
@@ -944,12 +973,11 @@
         const twVal = document.getElementById('filter-township').value;
         filteredData = rawData.filter(d =>
             (monthVal === 'All' || d.monthKey === monthVal) &&
-            (catVal === 'All' || d.category === catVal) &&
+            (catVal === 'All' || d.region === catVal) &&
             (twVal === 'All' || d.township === twVal)
         );
         renderAll();
-        clearAiSummaryCache();
-        generateAiSummary();
+        generateAiSummary(); // shows cached summary instantly; only fetches a new one if it's due
     }
 
     function resetAllFilters(){
@@ -998,10 +1026,10 @@
         document.getElementById('kpi-total').textContent = data.length;
         const uniqueDates = new Set(data.map(d=>d.dateKey).filter(Boolean));
         const avgDaily = uniqueDates.size ? (data.length / uniqueDates.size) : 0;
-        document.getElementById('kpi-daily').textContent = avgDaily ? avgDaily.toFixed(1) : '0';
+        document.getElementById('kpi-daily').textContent = avgDaily ? Math.round(avgDaily) : '0';
         const durations = data.map(d=>d.responseMinutes).filter(v=>v!=null);
-        const avgResp = durations.length ? (durations.reduce((a,b)=>a+b,0)/durations.length) : 0;
-        document.getElementById('kpi-response').textContent = durations.length ? (avgResp.toFixed(1) + ' min') : 'N/A';
+        const avgRespMin = durations.length ? (durations.reduce((a,b)=>a+b,0)/durations.length) : 0;
+        document.getElementById('kpi-response').textContent = durations.length ? (Math.round(avgRespMin * 60) + ' sec') : 'N/A';
     }
 
     const PALETTE = ['#10b981','#3b82f6','#f97316','#ef4444','#f59e0b','#8b5cf6','#06b6d4','#ec4899','#84cc16','#6366f1'];
@@ -1080,9 +1108,16 @@
         let vehicular = [];
         block('vehicular-classification', () => {
             vehicular = data.filter(isVehicular);
-            const classMap = groupCount(vehicular, 'classification');
+            // Not every incident has a classification filled in — skip blanks
+            // entirely rather than lumping them under "Unspecified".
+            const classMap = new Map();
+            vehicular.forEach(d => {
+                const c = (d.classification || '').trim();
+                if (!c) return;
+                classMap.set(c, (classMap.get(c) || 0) + 1);
+            });
             const classEntries = [...classMap.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8);
-            renderChart('vehicularClassificationChart', { type:'bar', data:{ labels: classEntries.map(e=>e[0]||'Unspecified'), datasets:[{ label:'Cases', data: classEntries.map(e=>e[1]), backgroundColor:'#ef4444', borderRadius:6 }] },
+            renderChart('vehicularClassificationChart', { type:'bar', data:{ labels: classEntries.map(e=>e[0]), datasets:[{ label:'Cases', data: classEntries.map(e=>e[1]), backgroundColor:'#ef4444', borderRadius:6 }] },
                 options: baseOptions({ indexAxis:'y', scales:{ x:{ ticks:{color:tc.text}, grid:{color:tc.grid}, beginAtZero:true }, y:{ ticks:{color:tc.text}, grid:{display:false} } }, plugins:{legend:{display:false}} }) });
         });
 
@@ -1140,13 +1175,13 @@
             const scatterPts = twEntries.map(([tw,count]) => {
                 const rows = data.filter(d=>d.township===tw);
                 const durs = rows.map(d=>d.responseMinutes).filter(v=>v!=null);
-                const avg = durs.length ? durs.reduce((a,b)=>a+b,0)/durs.length : 0;
-                return { x: count, y: +avg.toFixed(1), label: tw };
+                const avgMin = durs.length ? durs.reduce((a,b)=>a+b,0)/durs.length : 0;
+                return { x: count, y: Math.round(avgMin * 60), label: tw };
             });
             renderChart('townshipScatterChart', { type:'scatter', data:{ datasets:[{ label:'Townships', data: scatterPts, backgroundColor:'#f97316', pointRadius:6, pointHoverRadius:8 }] },
                 options: baseOptions({
-                    scales:{ x:{ title:{display:true, text:'Number of Incidents', color:tc.text}, ticks:{color:tc.text}, grid:{color:tc.grid} }, y:{ title:{display:true, text:'Avg Response Time (Mins)', color:tc.text}, ticks:{color:tc.text}, grid:{color:tc.grid} } },
-                    plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label: (ctx)=> `${ctx.raw.label}: ${ctx.raw.x} incidents, ${ctx.raw.y} min avg` } } }
+                    scales:{ x:{ title:{display:true, text:'Number of Incidents', color:tc.text}, ticks:{color:tc.text}, grid:{color:tc.grid} }, y:{ title:{display:true, text:'Avg Response Time (Secs)', color:tc.text}, ticks:{color:tc.text}, grid:{color:tc.grid} } },
+                    plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label: (ctx)=> `${ctx.raw.label}: ${ctx.raw.x} incidents, ${ctx.raw.y} sec avg` } } }
                 }) });
         });
 
@@ -1200,10 +1235,28 @@
 
     /* ------------------------- AI Analytics (via /api/analyze) ------------------------- */
     // Each dashboard view gets its own AI summary, since each view highlights
-    // different data. Cached per view so switching tabs is instant after the
-    // first generation; the cache is cleared whenever data/filters change or
-    // the 6-hour auto-refresh timer fires.
+    // different data. Cached per view so switching tabs is instant. The AI is
+    // only ever re-queried once every 12 hours per view (2x/day) — data
+    // refreshes and filter changes never force a new AI call. Until a view's
+    // 12 hours are up, its previous summary is sustained as-is; the panel
+    // swaps to the new description only once that new one has finished
+    // generating. The cache (with timestamps) is persisted to localStorage so
+    // the 12-hour cadence survives page reloads.
+    const AI_REFRESH_INTERVAL_MS = 12 * 60 * 60 * 1000; // 12 hours → 2 refreshes/day
+    const AI_CACHE_STORAGE_KEY = 'megaworldAiSummaryCache_v1';
     const aiSummaryCache = {};
+
+    (function loadPersistedAiCache(){
+        try {
+            const raw = localStorage.getItem(AI_CACHE_STORAGE_KEY);
+            if (raw) Object.assign(aiSummaryCache, JSON.parse(raw));
+        } catch (e) { /* localStorage unavailable/corrupt — start fresh */ }
+    })();
+
+    function persistAiCache(){
+        try { localStorage.setItem(AI_CACHE_STORAGE_KEY, JSON.stringify(aiSummaryCache)); } catch (e) { /* ignore */ }
+    }
+
     const VIEW_FOCUS = {
         main: 'Give a general operations overview across all incident types and townships.',
         vehicular: 'Focus specifically on vehicular/traffic-related incidents — patterns in location, timing, and response time.',
@@ -1212,10 +1265,6 @@
         township: 'Focus on differences between townships — which townships have the most incidents or slowest response times.',
         type: 'Focus on the mix of incident types/classifications and which categories are most common.'
     };
-
-    function clearAiSummaryCache(){
-        Object.keys(aiSummaryCache).forEach(k => delete aiSummaryCache[k]);
-    }
 
     // Aggregates a full month of records into compact stats (counts, top
     // categories, resolution rate, etc.) instead of sending every raw row —
@@ -1239,10 +1288,10 @@
         return {
             month: monthLabel || 'N/A',
             totalIncidents: total,
-            avgDailyIncidents: avgDaily.toFixed(1),
+            avgDailyIncidents: Math.round(avgDaily),
             peakDay: peakDay ? `${peakDay[0]} (${peakDay[1]} incidents)` : 'N/A',
             resolutionRatePct: total ? ((resolvedCount/total)*100).toFixed(1) : '0',
-            avgResponseMinutes: responseCount ? (responseSum/responseCount).toFixed(1) : 'N/A',
+            avgResponseSeconds: responseCount ? Math.round((responseSum/responseCount) * 60) : 'N/A',
             topTypes: topN(byType),
             topAlertLevels: topN(byAlert, 3),
             topTownships: topN(byTownship),
@@ -1256,10 +1305,21 @@
         if (!statusEl || !bodyEl) return; // panel not present
 
         const view = currentView || 'main';
+        const cached = aiSummaryCache[view];
+        const dueForRefresh = !cached || (Date.now() - (cached.timestamp || 0)) >= AI_REFRESH_INTERVAL_MS;
 
-        if (!forceRefresh && aiSummaryCache[view]) {
-            bodyEl.textContent = aiSummaryCache[view].summary;
-            statusEl.textContent = 'Updated ' + aiSummaryCache[view].time;
+        // Always show whatever is cached for this view right away — the
+        // previous description is sustained on screen until a new one (if
+        // any) finishes generating below.
+        if (cached) {
+            bodyEl.textContent = cached.summary;
+            statusEl.textContent = 'Updated ' + cached.time;
+        }
+
+        // Not due for its twice-a-day refresh yet, and nobody explicitly
+        // forced it (manual Refresh button / the 12-hour timer) — nothing
+        // more to do, keep sustaining the previous summary.
+        if (!forceRefresh && !dueForRefresh) {
             return;
         }
 
@@ -1268,7 +1328,7 @@
         if (base.length === 0) {
             statusEl.textContent = 'No data';
             // Only overwrite the panel if there's nothing useful already shown
-            if (!aiSummaryCache[view]) bodyEl.textContent = 'No incident data available for this view yet.';
+            if (!cached) bodyEl.textContent = 'No incident data available for this view yet.';
             return;
         }
 
@@ -1317,7 +1377,8 @@
             }
             const summaryText = data.summary || 'No summary returned.';
             const timeLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            aiSummaryCache[view] = { summary: summaryText, time: timeLabel };
+            aiSummaryCache[view] = { summary: summaryText, time: timeLabel, timestamp: Date.now() };
+            persistAiCache();
             bodyEl.textContent = summaryText;
             statusEl.textContent = 'Updated ' + timeLabel;
         } catch (err) {
@@ -1327,7 +1388,7 @@
             // failure. If there has never been a successful analysis yet,
             // show a calm one-line notice instead of a scary error dump.
             statusEl.textContent = 'Update failed — showing last analysis';
-            if (!aiSummaryCache[view]) {
+            if (!cached) {
                 bodyEl.textContent = 'AI analysis is temporarily unavailable. It will retry automatically.';
                 statusEl.textContent = 'Unavailable';
             }
@@ -1335,13 +1396,13 @@
         if (btn) btn.disabled = false;
     }
 
-    // Auto-refresh every 6 hours. Only the currently active view is
-    // force-regenerated to conserve the free API quota; other views simply
-    // regenerate the next time someone switches to them.
+    // Every view is checked twice a day (every 12 hours); only the currently
+    // active view is force-regenerated right now to conserve the free API
+    // quota — the other views simply pick up their own 12-hour refresh the
+    // next time someone switches to them (see the dueForRefresh check above).
     setInterval(() => {
-        clearAiSummaryCache();
         generateAiSummary(true);
-    }, 6 * 60 * 60 * 1000);
+    }, AI_REFRESH_INTERVAL_MS);
 
     /* ------------------------- Theme toggle ------------------------- */
     function toggleTheme(){
