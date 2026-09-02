@@ -1,4 +1,4 @@
-gi<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -551,7 +551,7 @@ gi<!DOCTYPE html>
         <header class="dashboard-header">
             <div class="header-left">
                 <h1 id="view-title">Township Incident Dashboard</h1>
-                <p>Integrated Township Management Corporation &mdash; January to August 2026</p>
+                <p>Integrated Township Management Corporation &mdash; January to June 2026</p>
             </div>
             <div class="header-right">
                 <div id="live-clock">00:00:00 AM</div>
@@ -706,11 +706,17 @@ gi<!DOCTYPE html>
        CONFIG — update these two lines if you copy this dashboard to point
        at a different Google Sheet or a different monthly tab.
        The sheet must be shared as "Anyone with the link can view".
+
+       Points at the MASTER CONSOLIDATED sheet ("Incident Report Summary
+       2026"), which combines every monthly tab into one continuous table —
+       this is what keeps the dashboard's totals in sync with the full
+       consolidated record count instead of just a single month's tab.
+       Header row is row 1, data starts in column A ("Type of Incident").
     ===================================================================== */
     const SHEET_ID  = '1jmOdd1YYsOUIGfZOS8pwHpYvND7ZcqbyAwqmPLmQGas';
-    const SHEET_GID = '350607722'; // "MAY 2026" tab — from the sheet URL's gid= parameter
-    const SHEET_TAB = 'MASTER CONSOLIDATED';   // fallback label / used only if gid lookup ever fails
-    const SHEET_RANGE = 'A5:V3000'; // header row 5, data below, columns B..V
+    const SHEET_GID = '350607722'; // consolidated "Incident Report Summary 2026" tab — from the sheet URL's gid= parameter
+    const SHEET_TAB = 'Incident Report Summary 2026'; // fallback label / used only if gid lookup ever fails
+    const SHEET_RANGE = 'A1:U5000'; // header row 1, data below, columns A..U (padded well past current row count for headroom)
 
     function buildGvizUrl(useGid){
         const sel = useGid ? `gid=${SHEET_GID}` : `sheet=${encodeURIComponent(SHEET_TAB)}`;
@@ -805,8 +811,8 @@ gi<!DOCTYPE html>
             const mon = MONTHS[m[1].slice(0,3).toLowerCase()];
             if (mon != null) return new Date(parseInt(m[3]), mon, parseInt(m[2]));
         }
-        m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); // "5/3/2026" (M/D/Y)
-        if (m) return new Date(parseInt(m[3]), parseInt(m[1]) - 1, parseInt(m[2]));
+        m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); // "13/01/2026" — this sheet uses D/M/Y (Philippine convention)
+        if (m) return new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]));
         m = str.match(/^(\d{4})-(\d{2})-(\d{2})/); // "2026-05-03"
         if (m) return new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
         return null;
@@ -891,6 +897,17 @@ gi<!DOCTYPE html>
             rec.township = rec.township || 'Unspecified';
             rec.alertLevel = rec.alertLevel || 'Unspecified';
             rec.region = regionForTownship(rec.township);
+            // The "Incident Classification" column is only ever filled in for
+            // vehicular incidents (e.g. Reckless Driving, Speeding). Reports
+            // of any other type simply won't have one — that's expected, not
+            // missing data — so tag them explicitly instead of leaving the
+            // field blank. This keeps every report in the dataset (nothing
+            // gets dropped) while making clear why the field is empty.
+            // A vehicular-type report with a genuinely blank classification
+            // (a real data-entry gap) is left blank rather than mislabeled.
+            if (!rec.classification) {
+                rec.classification = /vehicular/i.test(rec.type) ? '' : 'Not Vehicular Incident';
+            }
             return rec;
         }).filter(Boolean);
     }
