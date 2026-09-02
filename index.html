@@ -376,6 +376,15 @@
         .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); text-align: center; gap: 8px; padding: 2rem; }
         .empty-state i { font-size: 1.8rem; opacity: 0.5; }
 
+        .city-breakdown { display: flex; flex-direction: column; gap: 10px; max-height: 420px; overflow-y: auto; padding-right: 4px; }
+        .city-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px 14px; }
+        .city-row-main { display: flex; flex-direction: column; gap: 2px; }
+        .city-row-main strong { font-family: var(--font-display); letter-spacing: 0.03em; }
+        .city-row-main span { font-size: 0.8rem; color: var(--text-muted); }
+        .city-row-stats { display: flex; align-items: center; gap: 14px; font-size: 0.82rem; color: var(--text-muted); flex-wrap: wrap; }
+        .city-row-stats .city-pct { font-family: var(--font-display); font-weight: 700; font-size: 1rem; color: var(--brand-mint); }
+        .city-row-stats .city-pct.muted { color: var(--text-muted); font-weight: 500; font-size: 0.82rem; }
+
         /* Responsive UI adaptations */
         @media (max-width: 1200px) {
             .grid-2-1, .grid-1-2, .grid-equal { grid-template-columns: 1fr; }
@@ -532,6 +541,7 @@
             <li class="nav-item" onclick="switchView('time', this)"><i class="fa-solid fa-clock"></i>TIME</li>
             <li class="nav-item" onclick="switchView('alert', this)"><i class="fa-solid fa-triangle-exclamation"></i>ALERT</li>
             <li class="nav-item" onclick="switchView('township', this)"><i class="fa-solid fa-city"></i>TOWNSHIP</li>
+            <li class="nav-item" onclick="switchView('city', this)"><i class="fa-solid fa-building-columns"></i>CITY IMPACT</li>
             <li class="nav-item" onclick="switchView('type', this)"><i class="fa-solid fa-list"></i>TYPE</li>
         </ul>
 
@@ -686,6 +696,19 @@
             </div>
         </section>
 
+        <section class="dashboard-view" id="view-city">
+            <div class="grid-1-2">
+                <div class="card-panel">
+                    <div class="card-title"><span><i class="fa-solid fa-chart-bar" style="color: var(--brand-mint)"></i> % Share of City-Wide Incidents</span></div>
+                    <div class="chart-wrapper"><canvas id="cityContributionChart"></canvas></div>
+                </div>
+                <div class="card-panel">
+                    <div class="card-title"><span><i class="fa-solid fa-building-columns" style="color: var(--accent-blue)"></i> City vs Township Breakdown</span><small><a href="admin.html" target="_blank" style="color:var(--text-muted)"><i class="fa-solid fa-user-shield"></i> Admin</a></small></div>
+                    <div id="cityContributionBody" class="city-breakdown"></div>
+                </div>
+            </div>
+        </section>
+
         <section class="ai-panel">
             <div class="ai-panel-header">
                 <h3><i class="fa-solid fa-wand-magic-sparkles"></i> AI Analytics &mdash; Last 3 Days</h3>
@@ -742,6 +765,8 @@
 
     let rawData = [];
     let filteredData = [];
+    let cityDataRows = [];      // from the "CityData" sheet tab: {city, province, month, totalIncidents}
+    let townshipCityMap = {};   // from the "TownshipCityMap" sheet tab: { TOWNSHIP: {city, province} }
     let charts = {};
     let map = null;
     let tileLayer = null;
@@ -752,7 +777,7 @@
     let tvRotateTimer = null;
     let tvProgressTimer = null;
     let tvViewIndex = 0;
-    const TV_VIEW_ORDER = ['main','vehicular','time','alert','township','type'];
+    const TV_VIEW_ORDER = ['main','vehicular','time','alert','township','city','type'];
     const TV_ROTATE_MS = 30000; // seconds per view while in TV mode
 
     /* ------------------------- Fetch & parse ------------------------- */
@@ -912,6 +937,48 @@
         }).filter(Boolean);
     }
 
+    /* ------------------------- City / Admin config sheets ------------------------- */
+    // Reads two extra tabs from the SAME spreadsheet: "TownshipCityMap" (which
+    // city each township belongs to) and "CityData" (the admin-entered
+    // monthly city-wide incident totals). Both are managed from admin.html —
+    // this dashboard only ever reads them. Missing tabs are handled quietly
+    // (the City Impact view just shows a "not set up yet" state) since these
+    // are optional/new and older copies of the sheet won't have them yet.
+    async function fetchAuxSheet(tabName, range){
+        const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(tabName)}&range=${range}`;
+        return await fetchOnce(url);
+    }
+
+    async function loadCityConfigSheets(){
+        try {
+            const mapRows = await fetchAuxSheet('TownshipCityMap', 'A1:C500');
+            const map = {};
+            mapRows.slice(1).forEach(r => {
+                const tw = (r[0] || '').trim().toUpperCase();
+                if (!tw) return;
+                map[tw] = { city: (r[1] || '').trim(), province: (r[2] || '').trim() };
+            });
+            townshipCityMap = map;
+        } catch (e) {
+            console.warn('TownshipCityMap tab not available yet:', e.message);
+            townshipCityMap = {};
+        }
+        try {
+            const cdRows = await fetchAuxSheet('CityData', 'A1:F5000');
+            cityDataRows = cdRows.slice(1)
+                .map(r => ({
+                    city: (r[0] || '').trim(),
+                    province: (r[1] || '').trim(),
+                    month: (r[2] || '').trim(), // "YYYY-MM"
+                    totalIncidents: parseFloat(r[3]) || 0
+                }))
+                .filter(r => r.city && r.month);
+        } catch (e) {
+            console.warn('CityData tab not available yet:', e.message);
+            cityDataRows = [];
+        }
+    }
+
     /* ------------------------- Init / refresh ------------------------- */
     async function loadData(isRefresh){
         const statusEl = document.getElementById('data-status');
@@ -950,6 +1017,11 @@
             }
             document.getElementById('statusBannerText').textContent = msg;
             banner.classList.add('visible');
+        }
+        try {
+            await loadCityConfigSheets();
+        } catch (e) {
+            console.warn('City config sheets failed to load:', e.message);
         }
         refreshBtn.classList.remove('loading');
         refreshBtn.disabled = false;
@@ -1229,7 +1301,79 @@
             renderChart('typeIncidentChart', { type:'bar', data:{ labels: typeEntries.map(e=>e[0]), datasets:[{ label:'Total Counts', data: typeEntries.map(e=>e[1]), backgroundColor:'#10b981', borderRadius:6 }] },
                 options: baseOptions({ indexAxis:'y', scales:{ x:{ ticks:{color:tc.text}, grid:{color:tc.grid}, beginAtZero:true }, y:{ ticks:{color:tc.text}, grid:{display:false} } }, plugins:{legend:{display:false}} }) });
         });
+
+        block('city-contribution', renderCityView);
     }
+
+    /* ------------------------- City Impact view ------------------------- */
+    // For every township with a known city (from the TownshipCityMap tab),
+    // works out what share of that CITY's total incidents (from the CityData
+    // tab, admin-entered) this township's incidents represent for whichever
+    // month is currently selected. Shared by the chart/table render below and
+    // by the AI summary payload so both always agree on the same numbers.
+    function computeCityContribution(){
+        const monthVal = document.getElementById('filter-date').value;
+        const twCounts = {};
+        filteredData.forEach(d => {
+            const k = (d.township || '').toUpperCase();
+            twCounts[k] = (twCounts[k] || 0) + 1;
+        });
+        return Object.keys(townshipCityMap).sort().map(tw => {
+            const { city, province } = townshipCityMap[tw];
+            const cityTotal = cityDataRows
+                .filter(r => r.city.toLowerCase() === city.toLowerCase() && (monthVal === 'All' || r.month === monthVal))
+                .reduce((sum, r) => sum + r.totalIncidents, 0);
+            const townshipIncidents = twCounts[tw] || 0;
+            const percentage = cityTotal > 0 ? +(townshipIncidents / cityTotal * 100).toFixed(1) : null;
+            return { township: tw, city, province, cityTotal, townshipIncidents, percentage };
+        });
+    }
+
+    function renderCityView(){
+        const container = document.getElementById('cityContributionBody');
+        if (!container) return; // panel not present
+        const tc = themeColors();
+
+        if (Object.keys(townshipCityMap).length === 0) {
+            container.innerHTML = `<div class="empty-state"><i class="fa-solid fa-city"></i><span>No township&ndash;city mapping yet. Set it up on the Admin page.</span></div>`;
+            renderChart('cityContributionChart', { type:'bar', data:{ labels:[], datasets:[] }, options: baseOptions() });
+            return;
+        }
+
+        const rows = computeCityContribution();
+        const chartRows = rows.filter(r => r.percentage !== null);
+
+        renderChart('cityContributionChart', {
+            type: 'bar',
+            data: {
+                labels: chartRows.map(r => `${r.township} (${r.city})`),
+                datasets: [{ label: '% of city-wide incidents', data: chartRows.map(r => r.percentage), backgroundColor:'#10b981', borderRadius:6 }]
+            },
+            options: baseOptions({
+                indexAxis: 'y',
+                scales: {
+                    x: { ticks:{color:tc.text}, grid:{color:tc.grid}, beginAtZero:true, title:{display:true, text:'% of city-wide incidents', color:tc.text} },
+                    y: { ticks:{color:tc.text}, grid:{display:false} }
+                },
+                plugins: { legend:{display:false}, tooltip:{ callbacks:{ label: (ctx) => ctx.parsed.x + '% of city total' } } }
+            })
+        });
+
+        container.innerHTML = rows.map(r => `
+            <div class="city-row">
+                <div class="city-row-main">
+                    <strong>${r.township}</strong>
+                    <span>${r.city}${r.province ? ', ' + r.province : ''}</span>
+                </div>
+                <div class="city-row-stats">
+                    <span>${r.townshipIncidents} in township</span>
+                    <span>${r.cityTotal || '&mdash;'} city-wide</span>
+                    <span class="city-pct${r.percentage === null ? ' muted' : ''}">${r.percentage !== null ? r.percentage + '%' : 'No city data yet'}</span>
+                </div>
+            </div>
+        `).join('') || `<div class="empty-state"><i class="fa-solid fa-city"></i><span>No townships mapped yet.</span></div>`;
+    }
+
 
     /* ------------------------- Map ------------------------- */
     function initMap(){
@@ -1301,6 +1445,11 @@
         time: 'Focus on when incidents are happening — time-of-day patterns, peak hours, and day-to-day timing trends.',
         alert: 'Focus on alert/severity levels — how many are Blue/Yellow/Red, and whether severity is trending up or down.',
         township: 'Focus on differences between townships — which townships have the most incidents or slowest response times.',
+        city: 'Focus on the CITY_CONTEXT data: for each township, what share of its wider city\'s total incidents it represents. ' +
+              'Comment plainly on whether that share suggests the township is relatively safe/low-contribution within its city, ' +
+              'or a disproportionate hotspot — but stay cautious: a low percentage can also just mean the city itself has a lot ' +
+              'of incidents elsewhere, not that the township is unusually safe in absolute terms. Call out the highest and ' +
+              'lowest shares by name.',
         type: 'Focus on the mix of incident types/classifications and which categories are most common.'
     };
 
@@ -1363,10 +1512,20 @@
 
         const base = view === 'vehicular' ? filteredData.filter(isVehicular) : filteredData;
 
+        // The City Impact view needs city-wide contribution data alongside
+        // the usual incident stats — without it, the AI has no city totals
+        // to compare against and can't say anything about relative safety.
+        const cityContext = view === 'city' ? computeCityContribution().filter(r => r.percentage !== null) : null;
+
         if (base.length === 0) {
             statusEl.textContent = 'No data';
             // Only overwrite the panel if there's nothing useful already shown
             if (!cached) bodyEl.textContent = 'No incident data available for this view yet.';
+            return;
+        }
+        if (view === 'city' && (!cityContext || cityContext.length === 0)) {
+            statusEl.textContent = 'No data';
+            if (!cached) bodyEl.textContent = 'No city-wide data has been entered yet for this month. Add it from the Admin page to unlock this analysis.';
             return;
         }
 
@@ -1406,6 +1565,7 @@
                 body: JSON.stringify({
                     monthlyStats,
                     recentRows,
+                    cityContext,
                     focus: VIEW_FOCUS[view] || VIEW_FOCUS.main
                 })
             });
@@ -1480,11 +1640,13 @@
         time: ['timeHoursChart','timeDaysChart'],
         alert: ['alertTownshipChart','alertCategoryChart'],
         township: ['townshipShareChart','townshipScatterChart'],
+        city: ['cityContributionChart'],
         type: ['typeIncidentChart']
     };
     const viewTitles = {
         main: 'Township Incident Dashboard', vehicular: 'Vehicular Incident Analysis', time: 'Incident Temporal Dynamics',
-        alert: 'Alert & Operations Center', township: 'Township Performance Benchmarking', type: 'Incident Categorical Profile Logs'
+        alert: 'Alert & Operations Center', township: 'Township Performance Benchmarking', city: 'City Impact & Contribution',
+        type: 'Incident Categorical Profile Logs'
     };
 
     function switchView(viewName, menuItem){

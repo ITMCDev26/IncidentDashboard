@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Megaworld Dashboard — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+    :root {
+        --bg-base: #0b111e;
+        --bg-surface: rgba(20, 29, 47, 0.65);
+        --bg-card: rgba(28, 40, 65, 0.45);
+        --bg-input: rgba(15, 23, 42, 0.6);
+        --border-color: rgba(255, 255, 255, 0.08);
+        --brand-mint: #10b981;
+        --accent-blue: #3b82f6;
+        --accent-orange: #f97316;
+        --accent-red: #ef4444;
+        --text-main: #f1f5f9;
+        --text-muted: #94a3b8;
+        --font-display: 'Space Grotesk', sans-serif;
+        --font-body: 'Plus Jakarta Sans', sans-serif;
+        --bg-gradient: radial-gradient(circle at top left, #111e36 0%, #0b111e 60%);
+        --shadow-soft: 0 4px 14px rgba(0,0,0,0.25);
+    }
+    * { margin:0; padding:0; box-sizing:border-box; font-family:var(--font-body); }
+    html { -webkit-text-size-adjust:100%; }
+    body {
+        background-color: var(--bg-base);
+        background-image: var(--bg-gradient);
+        color: var(--text-main);
+        min-height: 100vh;
+        padding: 1.5rem;
+    }
+    a { color: var(--brand-mint); text-decoration:none; }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+
+    header.top { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom: 1.5rem; }
+    header.top h1 { font-family:var(--font-display); font-size:1.4rem; display:flex; align-items:center; gap:10px; }
+    header.top h1 i { color: var(--brand-mint); }
+    header.top .back-link { font-size:0.85rem; color:var(--text-muted); display:flex; align-items:center; gap:6px; }
+    #logoutBtn { display:none; }
+
+    .card {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 1.4rem;
+        margin-bottom: 1.5rem;
+        box-shadow: var(--shadow-soft);
+        backdrop-filter: blur(10px);
+    }
+    .card h2 { font-family:var(--font-display); font-size:1.05rem; margin-bottom: 1rem; display:flex; align-items:center; gap:8px; }
+    .card h2 i { color: var(--accent-blue); }
+    .card p.hint { color:var(--text-muted); font-size:0.82rem; margin-top:-0.5rem; margin-bottom:1rem; }
+
+    /* ---------------- Login ---------------- */
+    #loginScreen { max-width: 380px; margin: 8vh auto; }
+    #loginScreen h2 { justify-content:center; }
+    .field { margin-bottom: 12px; }
+    .field label { display:block; font-size:0.78rem; color:var(--text-muted); margin-bottom:5px; text-transform:uppercase; letter-spacing:0.04em; }
+    .field input, .field select {
+        width:100%; padding:10px 12px; border-radius:9px; border:1px solid var(--border-color);
+        background: var(--bg-input); color: var(--text-main); font-size:0.92rem; outline:none;
+    }
+    .field input:focus, .field select:focus { border-color: var(--brand-mint); }
+
+    .btn {
+        display:inline-flex; align-items:center; gap:8px; justify-content:center;
+        padding: 10px 18px; border-radius: 9px; border:none; cursor:pointer;
+        font-weight:600; font-size:0.88rem; font-family:var(--font-body); transition: filter 0.15s ease, transform 0.1s ease;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary { background: var(--brand-mint); color:#04140f; }
+    .btn-secondary { background: transparent; color:var(--text-main); border:1px solid var(--border-color); }
+    .btn-danger { background: rgba(239,68,68,0.15); color: var(--accent-red); border:1px solid rgba(239,68,68,0.35); }
+    .btn:hover { filter: brightness(1.08); }
+    .btn:disabled { opacity:0.55; cursor:not-allowed; }
+    .btn-row { display:flex; gap:10px; flex-wrap:wrap; margin-top: 6px; }
+
+    #loginError { color: var(--accent-red); font-size:0.82rem; margin-top:8px; min-height:1.1em; }
+    #loginSecurityNote { color: var(--text-muted); font-size:0.75rem; margin-top:14px; line-height:1.5; border-top:1px solid var(--border-color); padding-top:12px; }
+
+    /* ---------------- Forms ---------------- */
+    .form-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:12px; }
+    #adminPanels { display:none; }
+
+    /* ---------------- Tables ---------------- */
+    .table-wrap { overflow-x:auto; margin-top: 1.1rem; border-radius: 10px; border:1px solid var(--border-color); }
+    table { width:100%; border-collapse: collapse; font-size:0.85rem; min-width: 480px; }
+    th, td { text-align:left; padding: 10px 12px; white-space:nowrap; }
+    thead th { background: rgba(255,255,255,0.03); color:var(--text-muted); font-weight:600; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.04em; }
+    tbody tr { border-top: 1px solid var(--border-color); }
+    tbody tr:hover { background: rgba(255,255,255,0.02); }
+    td.actions { display:flex; gap:8px; }
+    td.actions button { background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:0.95rem; padding:4px; }
+    td.actions button:hover { color: var(--text-main); }
+    td.actions button.del:hover { color: var(--accent-red); }
+    .empty-row td { color:var(--text-muted); text-align:center; padding: 20px; white-space:normal; }
+
+    .toast {
+        position: fixed; bottom: 20px; left:50%; transform: translateX(-50%);
+        background: #111e36; border:1px solid var(--border-color); border-radius:10px;
+        padding: 10px 18px; font-size:0.85rem; box-shadow: var(--shadow-soft);
+        display:flex; align-items:center; gap:8px; z-index:50; opacity:0; pointer-events:none;
+        transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+    .toast.show { opacity:1; transform: translateX(-50%) translateY(-4px); }
+    .toast.ok i { color: var(--brand-mint); }
+    .toast.err i { color: var(--accent-red); }
+
+    @media (max-width: 640px) {
+        body { padding: 1rem; }
+        .card { padding: 1rem; }
+        table { min-width: 420px; }
+        header.top h1 { font-size:1.15rem; }
+    }
+</style>
+</head>
+<body>
+<div class="wrap">
+    <header class="top">
+        <h1><i class="fa-solid fa-user-shield"></i> Admin — City Data</h1>
+        <div style="display:flex; align-items:center; gap:16px;">
+            <a class="back-link" href="index.html"><i class="fa-solid fa-arrow-left"></i> Back to dashboard</a>
+            <button class="btn btn-secondary" id="logoutBtn" onclick="logout()"><i class="fa-solid fa-right-from-bracket"></i> Log out</button>
+        </div>
+    </header>
+
+    <!-- ================= LOGIN ================= -->
+    <div class="card" id="loginScreen">
+        <h2><i class="fa-solid fa-lock"></i> Admin Login</h2>
+        <form onsubmit="handleLogin(event)">
+            <div class="field">
+                <label for="loginUser">Username</label>
+                <input id="loginUser" type="text" autocomplete="username" required>
+            </div>
+            <div class="field">
+                <label for="loginPass">Password</label>
+                <input id="loginPass" type="password" autocomplete="current-password" required>
+            </div>
+            <button class="btn btn-primary" type="submit" style="width:100%;" id="loginBtn"><i class="fa-solid fa-right-to-bracket"></i> Log in</button>
+            <div id="loginError"></div>
+        </form>
+        <div id="loginSecurityNote">
+            <i class="fa-solid fa-circle-info"></i> Login credentials are checked against the "Admins" tab
+            in the Google Sheet — no extra security layer, per how this was set up. Don't reuse an important password here.
+        </div>
+    </div>
+
+    <!-- ================= ADMIN PANELS ================= -->
+    <div id="adminPanels">
+
+        <div class="card">
+            <h2><i class="fa-solid fa-chart-column"></i> Monthly City Incident Totals</h2>
+            <p class="hint">Enter the total incident count reported for an entire city for a given month. This is what the dashboard's City Impact tab compares each township against.</p>
+            <div class="form-grid">
+                <div class="field">
+                    <label for="cdCity">City</label>
+                    <input id="cdCity" list="cityOptions" placeholder="e.g. Taguig City">
+                    <datalist id="cityOptions"></datalist>
+                </div>
+                <div class="field">
+                    <label for="cdProvince">Province</label>
+                    <input id="cdProvince" placeholder="e.g. Metro Manila">
+                </div>
+                <div class="field">
+                    <label for="cdMonth">Month</label>
+                    <input id="cdMonth" type="month">
+                </div>
+                <div class="field">
+                    <label for="cdTotal">Total Incidents (citywide)</label>
+                    <input id="cdTotal" type="number" min="0" step="1" placeholder="e.g. 1200">
+                </div>
+            </div>
+            <div class="btn-row">
+                <button class="btn btn-primary" id="cdSaveBtn" onclick="saveCityData()"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+                <button class="btn btn-secondary" onclick="resetCityDataForm()"><i class="fa-solid fa-eraser"></i> Clear / New Entry</button>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>City</th><th>Province</th><th>Month</th><th>Total</th><th>Last Updated</th><th>Actions</th></tr></thead>
+                    <tbody id="cityDataTableBody"><tr class="empty-row"><td colspan="6">Loading…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2><i class="fa-solid fa-map-location-dot"></i> Township &harr; City Mapping</h2>
+            <p class="hint">Which city each township belongs to. Add new townships or fix an existing one — this feeds both the City Impact tab and the AI commentary.</p>
+            <div class="form-grid">
+                <div class="field">
+                    <label for="twCode">Township Code</label>
+                    <input id="twCode" placeholder="e.g. MTCEA" style="text-transform:uppercase;">
+                </div>
+                <div class="field">
+                    <label for="twCity">City</label>
+                    <input id="twCity" list="cityOptions" placeholder="e.g. Taguig City">
+                </div>
+                <div class="field">
+                    <label for="twProvince">Province</label>
+                    <input id="twProvince" placeholder="e.g. Metro Manila">
+                </div>
+            </div>
+            <div class="btn-row">
+                <button class="btn btn-primary" id="twSaveBtn" onclick="saveTownshipMap()"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+                <button class="btn btn-secondary" onclick="resetTownshipForm()"><i class="fa-solid fa-eraser"></i> Clear / New Entry</button>
+                <button class="btn btn-secondary" onclick="seedDefaultTownships()"><i class="fa-solid fa-seedling"></i> Add the 14 known townships</button>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Township</th><th>City</th><th>Province</th><th>Actions</th></tr></thead>
+                    <tbody id="townshipTableBody"><tr class="empty-row"><td colspan="4">Loading…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<div class="toast" id="toast"><i class="fa-solid fa-circle-check"></i><span id="toastMsg"></span></div>
+
+<script>
+/* =====================================================================
+   CONFIG — must match index.html's SHEET_ID. Paste your Apps Script
+   Web App URL (see apps-script.gs) into WEBAPP_URL below before this
+   page can save anything.
+===================================================================== */
+const SHEET_ID = '1jmOdd1YYsOUIGfZOS8pwHpYvND7ZcqbyAwqmPLmQGas';
+const WEBAPP_URL = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE'; // ends in /exec
+
+const DEFAULT_TOWNSHIPS = [
+    { township: 'BNC',   city: 'Malay',            province: 'Aklan' },
+    { township: 'SCEA',  city: 'Biñan',            province: 'Laguna' },
+    { township: 'TLC',   city: 'Laurel',           province: 'Batangas' },
+    { township: 'CTA',   city: 'San Fernando City', province: 'Pampanga' },
+    { township: 'MGEA',  city: 'General Trias City', province: 'Cavite' },
+    { township: 'ACEA',  city: 'Pasig City',        province: 'Metro Manila' },
+    { township: 'MTCEA', city: 'Taguig City',       province: 'Metro Manila' },
+    { township: 'MWEA',  city: 'Taguig City',       province: 'Metro Manila' },
+    { township: 'NCEA',  city: 'Pasay City',        province: 'Metro Manila' },
+    { township: 'UBEA',  city: 'Taguig City',       province: 'Metro Manila' },
+    { township: 'IBPEA', city: 'Iloilo City',       province: 'Iloilo' },
+    { township: 'NGH',   city: 'Bacolod City',      province: 'Negros Occidental' },
+    { township: 'TMNEA', city: 'Lapu-Lapu City',    province: 'Cebu' },
+    { township: 'TUEA',  city: 'Bacolod City',      province: 'Negros Occidental' },
+];
+
+let cityDataRows = [];
+let townshipRows = [];
+let editingCityDataKey = null;   // {city, month} of the row currently being edited, or null
+let editingTownshipKey = null;   // township code currently being edited, or null
+
+/* ---------------- Auth ---------------- */
+function isLoggedIn(){ return sessionStorage.getItem('megaworldAdminUser') != null; }
+
+function showLoggedInUI(){
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('adminPanels').style.display = 'block';
+    document.getElementById('logoutBtn').style.display = 'inline-flex';
+}
+
+async function handleLogin(evt){
+    evt.preventDefault();
+    const username = document.getElementById('loginUser').value.trim();
+    const password = document.getElementById('loginPass').value;
+    const errEl = document.getElementById('loginError');
+    const btn = document.getElementById('loginBtn');
+    errEl.textContent = '';
+    if (!webAppConfigured()) return;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Checking…';
+    try {
+        const res = await callApi('login', { username, password });
+        if (res.success) {
+            sessionStorage.setItem('megaworldAdminUser', res.username || username);
+            showLoggedInUI();
+            loadAllData();
+        } else {
+            errEl.textContent = res.message || 'Login failed.';
+        }
+    } catch (e) {
+        errEl.textContent = 'Could not reach the admin API: ' + e.message;
+    }
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-right-to-bracket"></i> Log in';
+}
+
+function logout(){
+    sessionStorage.removeItem('megaworldAdminUser');
+    location.reload();
+}
+
+function webAppConfigured(){
+    if (!WEBAPP_URL || WEBAPP_URL.indexOf('PASTE_YOUR_APPS_SCRIPT') === 0) {
+        showToast('WEBAPP_URL is not set yet — open admin.html, find WEBAPP_URL near the top of the <script> tag, and paste in your Apps Script Web App URL (see apps-script.gs for setup steps).', false);
+        return false;
+    }
+    return true;
+}
+
+/* ---------------- API helper ---------------- */
+// Sends as text/plain (not application/json) on purpose — this avoids the
+// browser's CORS preflight (OPTIONS) request, which Apps Script Web Apps
+// don't handle. The Apps Script side still parses the body as JSON.
+async function callApi(action, payload){
+    const res = await fetch(WEBAPP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action, payload })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json();
+}
+
+/* ---------------- Reading current sheet data (read-only, same technique as the dashboard) ---------------- */
+async function fetchSheetTab(tabName, range){
+    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(tabName)}&range=${range}`;
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);?\s*$/);
+    if (!match) throw new Error(`Unexpected response reading "${tabName}" — does that tab exist yet?`);
+    const json = JSON.parse(match[1]);
+    if (json.status === 'error') {
+        const msg = (json.errors && json.errors[0] && json.errors[0].detailed_message) || 'Sheet query error';
+        throw new Error(msg);
+    }
+    const rows = json.table.rows || [];
+    return rows.slice(1).map(r => (r.c || []).map(c => {
+        if (!c) return '';
+        const val = (c.f != null && c.f !== '') ? c.f : c.v;
+        return (val != null) ? String(val).trim() : '';
+    }));
+}
+
+async function loadAllData(){
+    await Promise.all([loadCityData(), loadTownshipMap()]);
+    updateCityOptions();
+}
+
+async function loadCityData(){
+    const tbody = document.getElementById('cityDataTableBody');
+    try {
+        const rows = await fetchSheetTab('CityData', 'A1:F5000');
+        cityDataRows = rows
+            .map(r => ({ city: r[0]||'', province: r[1]||'', month: r[2]||'', totalIncidents: r[3]||'', lastUpdated: r[4]||'' }))
+            .filter(r => r.city && r.month)
+            .sort((a,b) => b.month.localeCompare(a.month) || a.city.localeCompare(b.city));
+        renderCityDataTable();
+    } catch (e) {
+        tbody.innerHTML = `<tr class="empty-row"><td colspan="6">Couldn't load CityData tab yet (${e.message}). Create it first — see apps-script.gs.</td></tr>`;
+    }
+}
+
+async function loadTownshipMap(){
+    const tbody = document.getElementById('townshipTableBody');
+    try {
+        const rows = await fetchSheetTab('TownshipCityMap', 'A1:C500');
+        townshipRows = rows
+            .map(r => ({ township: (r[0]||'').toUpperCase(), city: r[1]||'', province: r[2]||'' }))
+            .filter(r => r.township)
+            .sort((a,b) => a.township.localeCompare(b.township));
+        renderTownshipTable();
+    } catch (e) {
+        tbody.innerHTML = `<tr class="empty-row"><td colspan="4">Couldn't load TownshipCityMap tab yet (${e.message}). Create it first — see apps-script.gs.</td></tr>`;
+    }
+}
+
+function updateCityOptions(){
+    const cities = new Set();
+    cityDataRows.forEach(r => r.city && cities.add(r.city));
+    townshipRows.forEach(r => r.city && cities.add(r.city));
+    document.getElementById('cityOptions').innerHTML = [...cities].sort().map(c => `<option value="${escapeHtml(c)}">`).join('');
+}
+
+/* ---------------- Rendering ---------------- */
+function renderCityDataTable(){
+    const tbody = document.getElementById('cityDataTableBody');
+    if (cityDataRows.length === 0) {
+        tbody.innerHTML = `<tr class="empty-row"><td colspan="6">No city data entered yet. Use the form above to add the first month.</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = cityDataRows.map(r => `
+        <tr>
+            <td>${escapeHtml(r.city)}</td>
+            <td>${escapeHtml(r.province)}</td>
+            <td>${escapeHtml(r.month)}</td>
+            <td>${escapeHtml(String(r.totalIncidents))}</td>
+            <td>${escapeHtml(r.lastUpdated)}</td>
+            <td class="actions">
+                <button title="Edit" onclick='editCityData(${JSON.stringify(r).replace(/'/g,"&apos;")})'><i class="fa-solid fa-pen"></i></button>
+                <button title="Delete" class="del" onclick="deleteCityDataRow('${escapeJs(r.city)}','${escapeJs(r.month)}')"><i class="fa-solid fa-trash"></i></button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function renderTownshipTable(){
+    const tbody = document.getElementById('townshipTableBody');
+    if (townshipRows.length === 0) {
+        tbody.innerHTML = `<tr class="empty-row"><td colspan="4">No townships mapped yet. Click "Add the 14 known townships" or add one manually above.</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = townshipRows.map(r => `
+        <tr>
+            <td>${escapeHtml(r.township)}</td>
+            <td>${escapeHtml(r.city)}</td>
+            <td>${escapeHtml(r.province)}</td>
+            <td class="actions">
+                <button title="Edit" onclick='editTownship(${JSON.stringify(r).replace(/'/g,"&apos;")})'><i class="fa-solid fa-pen"></i></button>
+                <button title="Delete" class="del" onclick="deleteTownshipRow('${escapeJs(r.township)}')"><i class="fa-solid fa-trash"></i></button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+/* ---------------- City Data form actions ---------------- */
+function resetCityDataForm(){
+    editingCityDataKey = null;
+    document.getElementById('cdCity').value = '';
+    document.getElementById('cdProvince').value = '';
+    document.getElementById('cdMonth').value = '';
+    document.getElementById('cdTotal').value = '';
+    document.getElementById('cdSaveBtn').innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save';
+}
+
+function editCityData(row){
+    editingCityDataKey = { city: row.city, month: row.month };
+    document.getElementById('cdCity').value = row.city;
+    document.getElementById('cdProvince').value = row.province;
+    document.getElementById('cdMonth').value = row.month;
+    document.getElementById('cdTotal').value = row.totalIncidents;
+    document.getElementById('cdSaveBtn').innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save changes';
+    document.getElementById('cdCity').scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
+async function saveCityData(){
+    if (!webAppConfigured()) return;
+    const city = document.getElementById('cdCity').value.trim();
+    const province = document.getElementById('cdProvince').value.trim();
+    const month = document.getElementById('cdMonth').value; // "YYYY-MM" from <input type=month>
+    const totalIncidents = document.getElementById('cdTotal').value;
+    if (!city || !month || totalIncidents === '') {
+        showToast('City, month, and total incidents are all required.', false);
+        return;
+    }
+    const btn = document.getElementById('cdSaveBtn');
+    btn.disabled = true;
+    try {
+        const payload = {
+            city, province, month, totalIncidents,
+            updatedBy: sessionStorage.getItem('megaworldAdminUser') || 'admin',
+            originalCity: editingCityDataKey ? editingCityDataKey.city : undefined,
+            originalMonth: editingCityDataKey ? editingCityDataKey.month : undefined
+        };
+        const res = await callApi('saveCityData', payload);
+        if (res.success) {
+            showToast(res.mode === 'update' ? 'City data updated.' : 'City data added.', true);
+            resetCityDataForm();
+            await loadCityData();
+            updateCityOptions();
+        } else {
+            showToast(res.message || 'Save failed.', false);
+        }
+    } catch (e) {
+        showToast('Save failed: ' + e.message, false);
+    }
+    btn.disabled = false;
+}
+
+async function deleteCityDataRow(city, month){
+    if (!webAppConfigured()) return;
+    if (!confirm(`Delete the ${month} entry for ${city}?`)) return;
+    try {
+        const res = await callApi('deleteCityData', { city, month });
+        if (res.success) {
+            showToast('Deleted.', true);
+            await loadCityData();
+        } else {
+            showToast(res.message || 'Delete failed.', false);
+        }
+    } catch (e) {
+        showToast('Delete failed: ' + e.message, false);
+    }
+}
+
+/* ---------------- Township mapping form actions ---------------- */
+function resetTownshipForm(){
+    editingTownshipKey = null;
+    document.getElementById('twCode').value = '';
+    document.getElementById('twCity').value = '';
+    document.getElementById('twProvince').value = '';
+    document.getElementById('twSaveBtn').innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save';
+}
+
+function editTownship(row){
+    editingTownshipKey = row.township;
+    document.getElementById('twCode').value = row.township;
+    document.getElementById('twCity').value = row.city;
+    document.getElementById('twProvince').value = row.province;
+    document.getElementById('twSaveBtn').innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save changes';
+    document.getElementById('twCode').scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
+async function saveTownshipMap(){
+    if (!webAppConfigured()) return;
+    const township = document.getElementById('twCode').value.trim().toUpperCase();
+    const city = document.getElementById('twCity').value.trim();
+    const province = document.getElementById('twProvince').value.trim();
+    if (!township || !city) {
+        showToast('Township code and city are both required.', false);
+        return;
+    }
+    const btn = document.getElementById('twSaveBtn');
+    btn.disabled = true;
+    try {
+        const payload = { township, city, province, originalTownship: editingTownshipKey || undefined };
+        const res = await callApi('saveTownshipMap', payload);
+        if (res.success) {
+            showToast(res.mode === 'update' ? 'Township mapping updated.' : 'Township added.', true);
+            resetTownshipForm();
+            await loadTownshipMap();
+            updateCityOptions();
+        } else {
+            showToast(res.message || 'Save failed.', false);
+        }
+    } catch (e) {
+        showToast('Save failed: ' + e.message, false);
+    }
+    btn.disabled = false;
+}
+
+async function deleteTownshipRow(township){
+    if (!webAppConfigured()) return;
+    if (!confirm(`Remove ${township} from the township–city mapping?`)) return;
+    try {
+        const res = await callApi('deleteTownshipMap', { township });
+        if (res.success) {
+            showToast('Deleted.', true);
+            await loadTownshipMap();
+        } else {
+            showToast(res.message || 'Delete failed.', false);
+        }
+    } catch (e) {
+        showToast('Delete failed: ' + e.message, false);
+    }
+}
+
+async function seedDefaultTownships(){
+    if (!webAppConfigured()) return;
+    if (!confirm('Add the 14 known townships (skipping any already present)? This will make one save per new township.')) return;
+    const existing = new Set(townshipRows.map(r => r.township));
+    const toAdd = DEFAULT_TOWNSHIPS.filter(t => !existing.has(t.township));
+    if (toAdd.length === 0) {
+        showToast('All 14 townships are already mapped.', true);
+        return;
+    }
+    for (const t of toAdd) {
+        try {
+            await callApi('saveTownshipMap', { township: t.township, city: t.city, province: t.province });
+        } catch (e) {
+            showToast(`Failed adding ${t.township}: ${e.message}`, false);
+        }
+    }
+    showToast(`Added ${toAdd.length} township${toAdd.length === 1 ? '' : 's'}.`, true);
+    await loadTownshipMap();
+    updateCityOptions();
+}
+
+/* ---------------- Small helpers ---------------- */
+function showToast(msg, ok){
+    const el = document.getElementById('toast');
+    const iconEl = el.querySelector('i');
+    document.getElementById('toastMsg').textContent = msg;
+    el.className = 'toast show ' + (ok ? 'ok' : 'err');
+    iconEl.className = ok ? 'fa-solid fa-circle-check' : 'fa-solid fa-triangle-exclamation';
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => { el.classList.remove('show'); }, ok ? 3200 : 6000);
+}
+function escapeHtml(str){ return String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function escapeJs(str){ return String(str).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+
+/* ---------------- Boot ---------------- */
+if (isLoggedIn()) {
+    showLoggedInUI();
+    loadAllData();
+}
+</script>
+</body>
+</html>

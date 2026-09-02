@@ -26,19 +26,26 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { monthlyStats, recentRows, focus } = req.body;
+    const { monthlyStats, recentRows, cityContext, focus } = req.body;
 
-    if (!monthlyStats && (!recentRows || recentRows.length === 0)) {
+    if (!monthlyStats && (!recentRows || recentRows.length === 0) && (!cityContext || cityContext.length === 0)) {
       return res.status(200).json({
         summary: "No incident data available yet for this view.",
       });
     }
 
+    const cityContextBlock = (cityContext && cityContext.length > 0)
+      ? `\n\nCITY_CONTEXT — for each township, its wider city, that city's total incidents this
+period, this township's incidents, and the resulting percentage share:
+${JSON.stringify(cityContext)}`
+      : "";
+
     const prompt = `You are an operations analyst briefing decision-makers for the Megaworld Township
-incident reporting system. You have two inputs:
+incident reporting system. You have two or three inputs:
 
 1. MONTHLY_STATS — aggregated statistics for ${monthlyStats?.month || "the current period"} (the whole month, not just recent days).
 2. RECENT_INCIDENTS — the individual, detailed incident records from the last 3 days only.
+${cityContextBlock ? "3. CITY_CONTEXT — each township's share of its city's total incidents (see below)." : ""}
 
 ${focus ? `For this particular analysis: ${focus}` : ""}
 
@@ -52,6 +59,12 @@ management decide where to act. Structure it as:
    consider doing next based on this data (e.g. where to allocate patrols/staff, what to monitor,
    what's working well enough to leave alone). Be direct and actionable, not vague. Do not overstate
    confidence — this is a pattern-based suggestion, not a guarantee.
+${cityContextBlock ? `
+When CITY_CONTEXT is provided, replace point 1 above with a comparison instead: name the townships
+with the highest and lowest percentage share of their city's total incidents, and comment plainly on
+whether that suggests the township is relatively safe/low-contribution within its city or a
+disproportionate hotspot — while noting a low percentage can also just mean the wider city has a lot
+of incidents elsewhere, not that the township itself is unusually safe in absolute terms.` : ""}
 
 Keep the total response under 130 words. Plain text only, no markdown formatting, no headers, no
 bullet symbols — write it as flowing prose paragraphs.
@@ -60,7 +73,7 @@ MONTHLY_STATS:
 ${JSON.stringify(monthlyStats)}
 
 RECENT_INCIDENTS (last 3 days):
-${JSON.stringify(recentRows)}`;
+${JSON.stringify(recentRows)}${cityContextBlock}`;
 
     // Using OpenRouter's auto-router for free models instead of a hardcoded
     // model name. The free-model catalog rotates frequently (models get added
