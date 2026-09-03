@@ -953,7 +953,7 @@
         try {
             const mapRows = await fetchAuxSheet('TownshipCityMap', 'A1:C500');
             const map = {};
-            mapRows.slice(1).forEach(r => {
+            mapRows.forEach(r => {
                 const tw = (r[0] || '').trim().toUpperCase();
                 if (!tw) return;
                 map[tw] = { city: (r[1] || '').trim(), province: (r[2] || '').trim() };
@@ -965,7 +965,7 @@
         }
         try {
             const cdRows = await fetchAuxSheet('CityData', 'A1:F5000');
-            cityDataRows = cdRows.slice(1)
+            cityDataRows = cdRows
                 .map(r => ({
                     city: (r[0] || '').trim(),
                     province: (r[1] || '').trim(),
@@ -1313,20 +1313,25 @@
     // by the AI summary payload so both always agree on the same numbers.
     function computeCityContribution(){
         const monthVal = document.getElementById('filter-date').value;
+        const catVal = document.getElementById('filter-groupings').value;
+        const twVal = document.getElementById('filter-township').value;
         const twCounts = {};
         filteredData.forEach(d => {
             const k = (d.township || '').toUpperCase();
             twCounts[k] = (twCounts[k] || 0) + 1;
         });
-        return Object.keys(townshipCityMap).sort().map(tw => {
-            const { city, province } = townshipCityMap[tw];
-            const cityTotal = cityDataRows
-                .filter(r => r.city.toLowerCase() === city.toLowerCase() && (monthVal === 'All' || r.month === monthVal))
-                .reduce((sum, r) => sum + r.totalIncidents, 0);
-            const townshipIncidents = twCounts[tw] || 0;
-            const percentage = cityTotal > 0 ? +(townshipIncidents / cityTotal * 100).toFixed(1) : null;
-            return { township: tw, city, province, cityTotal, townshipIncidents, percentage };
-        });
+        return Object.keys(townshipCityMap)
+            .filter(tw => (twVal === 'All' || tw === twVal) && (catVal === 'All' || regionForTownship(tw) === catVal))
+            .sort()
+            .map(tw => {
+                const { city, province } = townshipCityMap[tw];
+                const cityTotal = cityDataRows
+                    .filter(r => r.city.toLowerCase() === city.toLowerCase() && (monthVal === 'All' || r.month === monthVal))
+                    .reduce((sum, r) => sum + r.totalIncidents, 0);
+                const townshipIncidents = twCounts[tw] || 0;
+                const percentage = cityTotal > 0 ? +(townshipIncidents / cityTotal * 100).toFixed(1) : null;
+                return { township: tw, city, province, cityTotal, townshipIncidents, percentage };
+            });
     }
 
     function renderCityView(){
